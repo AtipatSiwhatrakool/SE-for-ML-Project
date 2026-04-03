@@ -1,0 +1,122 @@
+[2026-03-31T20:44:46.734+0000] {taskinstance.py:1956} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: efficientnet_training_pipeline.extract_features_efficientnet manual__2026-03-31T20:44:46.117061+00:00 [queued]>
+[2026-03-31T20:44:46.738+0000] {taskinstance.py:1956} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: efficientnet_training_pipeline.extract_features_efficientnet manual__2026-03-31T20:44:46.117061+00:00 [queued]>
+[2026-03-31T20:44:46.739+0000] {taskinstance.py:2170} INFO - Starting attempt 1 of 1
+[2026-03-31T20:44:46.745+0000] {taskinstance.py:2191} INFO - Executing <Task(PythonOperator): extract_features_efficientnet> on 2026-03-31 20:44:46.117061+00:00
+[2026-03-31T20:44:46.751+0000] {standard_task_runner.py:60} INFO - Started process 247 to run task
+[2026-03-31T20:44:46.753+0000] {standard_task_runner.py:87} INFO - Running: ['***', 'tasks', 'run', 'efficientnet_training_pipeline', 'extract_features_efficientnet', 'manual__2026-03-31T20:44:46.117061+00:00', '--job-id', '6', '--raw', '--subdir', 'DAGS_FOLDER/train_pipeline.py', '--cfg-path', '/tmp/tmp_1una7sy']
+[2026-03-31T20:44:46.754+0000] {standard_task_runner.py:88} INFO - Job 6: Subtask extract_features_efficientnet
+[2026-03-31T20:44:46.786+0000] {task_command.py:423} INFO - Running <TaskInstance: efficientnet_training_pipeline.extract_features_efficientnet manual__2026-03-31T20:44:46.117061+00:00 [running]> on host 066671e5f707
+[2026-03-31T20:44:46.835+0000] {taskinstance.py:2480} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='ml_engineer' AIRFLOW_CTX_DAG_ID='efficientnet_training_pipeline' AIRFLOW_CTX_TASK_ID='extract_features_efficientnet' AIRFLOW_CTX_EXECUTION_DATE='2026-03-31T20:44:46.117061+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='manual__2026-03-31T20:44:46.117061+00:00'
+[2026-03-31T20:44:49.288+0000] {train_pipeline.py:24} INFO - Using device: cuda
+[2026-03-31T20:44:49.289+0000] {train_pipeline.py:26} INFO - Loading dataset from Hugging Face...
+[2026-03-31T20:44:49.289+0000] {logging_mixin.py:188} WARNING - `trust_remote_code` is not supported anymore.
+Please check that the Hugging Face dataset 'Punnarunwuwu/industry-verification-seml' isn't based on a loading script and remove `trust_remote_code`.
+If the dataset is based on a loading script, please ask the dataset author to remove it and convert it to a standard format like Parquet.
+[2026-03-31T20:44:49.289+0000] {load.py:1663} ERROR - `trust_remote_code` is not supported anymore.
+Please check that the Hugging Face dataset 'Punnarunwuwu/industry-verification-seml' isn't based on a loading script and remove `trust_remote_code`.
+If the dataset is based on a loading script, please ask the dataset author to remove it and convert it to a standard format like Parquet.
+[2026-03-31T20:44:49.886+0000] {logging_mixin.py:188} WARNING - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[2026-03-31T20:44:49.886+0000] {_http.py:916} WARNING - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[2026-03-31T20:45:31.832+0000] {logging_mixin.py:188} WARNING - Generating train split:   0%|          | 0/103781 [00:00<?, ? examples/s]
+[2026-03-31T20:45:31.945+0000] {logging_mixin.py:188} WARNING - Generating train split:   5%|5         | 5700/103781 [00:00<00:01, 50555.37 examples/s]
+[2026-03-31T20:45:32.053+0000] {logging_mixin.py:188} WARNING - Generating train split:  13%|#3        | 13800/103781 [00:00<00:01, 64562.95 examples/s]
+[2026-03-31T20:45:32.162+0000] {logging_mixin.py:188} WARNING - Generating train split:  22%|##2       | 23000/103781 [00:00<00:01, 73628.37 examples/s]
+[2026-03-31T20:45:32.265+0000] {logging_mixin.py:188} WARNING - Generating train split:  31%|###1      | 32200/103781 [00:00<00:00, 79529.55 examples/s]
+[2026-03-31T20:45:32.430+0000] {logging_mixin.py:188} WARNING - Generating train split:  42%|####2     | 44094/103781 [00:00<00:00, 75996.23 examples/s]
+[2026-03-31T20:45:32.532+0000] {logging_mixin.py:188} WARNING - Generating train split:  51%|#####1    | 53194/103781 [00:00<00:00, 80035.12 examples/s]
+[2026-03-31T20:45:32.634+0000] {logging_mixin.py:188} WARNING - Generating train split:  60%|#####9    | 62194/103781 [00:00<00:00, 82343.97 examples/s]
+[2026-03-31T20:45:32.797+0000] {logging_mixin.py:188} WARNING - Generating train split:  73%|#######3  | 76088/103781 [00:00<00:00, 83570.44 examples/s]
+[2026-03-31T20:45:32.912+0000] {logging_mixin.py:188} WARNING - Generating train split:  82%|########2 | 85288/103781 [00:01<00:00, 82517.20 examples/s]
+[2026-03-31T20:45:33.030+0000] {logging_mixin.py:188} WARNING - Generating train split:  91%|#########1| 94488/103781 [00:01<00:00, 81108.89 examples/s]
+[2026-03-31T20:45:33.113+0000] {logging_mixin.py:188} WARNING - Generating train split: 100%|##########| 103781/103781 [00:01<00:00, 80992.66 examples/s]
+[2026-03-31T20:45:33.115+0000] {logging_mixin.py:188} WARNING - Generating validation split:   0%|          | 0/2100 [00:00<?, ? examples/s]
+[2026-03-31T20:45:33.131+0000] {logging_mixin.py:188} WARNING - Generating validation split: 100%|##########| 2100/2100 [00:00<00:00, 131224.31 examples/s]
+[2026-03-31T20:45:33.146+0000] {train_pipeline.py:55} INFO - Loading EfficientNetV2-S backbone...
+[2026-03-31T20:45:33.345+0000] {logging_mixin.py:188} WARNING - Downloading: "https://download.pytorch.org/models/efficientnet_v2_s-dd5fe13b.pth" to /home/***/.cache/torch/hub/checkpoints/efficientnet_v2_s-dd5fe13b.pth
+[2026-03-31T20:45:33.612+0000] {logging_mixin.py:188} WARNING -   0%|          | 0.00/82.7M [00:00<?, ?B/s]
+[2026-03-31T20:45:34.049+0000] {logging_mixin.py:188} WARNING -   0%|          | 112k/82.7M [00:00<05:30, 262kB/s]
+[2026-03-31T20:45:34.185+0000] {logging_mixin.py:188} WARNING -   0%|          | 160k/82.7M [00:00<04:55, 293kB/s]
+[2026-03-31T20:45:34.290+0000] {logging_mixin.py:188} WARNING -   1%|          | 592k/82.7M [00:00<01:06, 1.29MB/s]
+[2026-03-31T20:45:34.438+0000] {logging_mixin.py:188} WARNING -   1%|1         | 952k/82.7M [00:00<00:50, 1.69MB/s]
+[2026-03-31T20:45:34.561+0000] {logging_mixin.py:188} WARNING -   3%|2         | 2.08M/82.7M [00:00<00:21, 4.01MB/s]
+[2026-03-31T20:45:34.665+0000] {logging_mixin.py:188} WARNING -   4%|4         | 3.59M/82.7M [00:01<00:12, 6.89MB/s]
+[2026-03-31T20:45:34.812+0000] {logging_mixin.py:188} WARNING -   5%|5         | 4.40M/82.7M [00:01<00:12, 6.52MB/s]
+[2026-03-31T20:45:35.017+0000] {logging_mixin.py:188} WARNING -   7%|6         | 5.62M/82.7M [00:01<00:12, 6.40MB/s]
+[2026-03-31T20:45:35.120+0000] {logging_mixin.py:188} WARNING -   8%|8         | 6.90M/82.7M [00:01<00:10, 7.90MB/s]
+[2026-03-31T20:45:35.262+0000] {logging_mixin.py:188} WARNING -  10%|9         | 8.00M/82.7M [00:01<00:09, 7.98MB/s]
+[2026-03-31T20:45:35.385+0000] {logging_mixin.py:188} WARNING -  12%|#2        | 10.1M/82.7M [00:01<00:07, 10.8MB/s]
+[2026-03-31T20:45:35.485+0000] {logging_mixin.py:188} WARNING -  15%|#5        | 12.7M/82.7M [00:01<00:05, 14.6MB/s]
+[2026-03-31T20:45:35.586+0000] {logging_mixin.py:188} WARNING -  19%|#9        | 15.8M/82.7M [00:01<00:03, 19.1MB/s]
+[2026-03-31T20:45:35.687+0000] {logging_mixin.py:188} WARNING -  23%|##3       | 19.4M/82.7M [00:02<00:02, 24.1MB/s]
+[2026-03-31T20:45:35.789+0000] {logging_mixin.py:188} WARNING -  26%|##6       | 21.9M/82.7M [00:02<00:02, 24.7MB/s]
+[2026-03-31T20:45:35.888+0000] {logging_mixin.py:188} WARNING -  32%|###2      | 26.8M/82.7M [00:02<00:01, 32.3MB/s]
+[2026-03-31T20:45:36.000+0000] {logging_mixin.py:188} WARNING -  36%|###6      | 30.2M/82.7M [00:02<00:01, 32.1MB/s]
+[2026-03-31T20:45:36.103+0000] {logging_mixin.py:188} WARNING -  44%|####3     | 36.2M/82.7M [00:02<00:01, 40.5MB/s]
+[2026-03-31T20:45:36.211+0000] {logging_mixin.py:188} WARNING -  49%|####8     | 40.2M/82.7M [00:02<00:01, 39.9MB/s]
+[2026-03-31T20:45:36.312+0000] {logging_mixin.py:188} WARNING -  56%|#####5    | 45.9M/82.7M [00:02<00:00, 45.7MB/s]
+[2026-03-31T20:45:36.413+0000] {logging_mixin.py:188} WARNING -  63%|######3   | 52.3M/82.7M [00:02<00:00, 51.7MB/s]
+[2026-03-31T20:45:36.515+0000] {logging_mixin.py:188} WARNING -  71%|#######1  | 59.1M/82.7M [00:02<00:00, 57.0MB/s]
+[2026-03-31T20:45:36.617+0000] {logging_mixin.py:188} WARNING -  79%|#######9  | 65.6M/82.7M [00:03<00:00, 60.0MB/s]
+[2026-03-31T20:45:36.719+0000] {logging_mixin.py:188} WARNING -  87%|########7 | 72.2M/82.7M [00:03<00:00, 62.4MB/s]
+[2026-03-31T20:45:36.820+0000] {logging_mixin.py:188} WARNING -  95%|#########5| 78.7M/82.7M [00:03<00:00, 63.9MB/s]
+[2026-03-31T20:45:36.881+0000] {logging_mixin.py:188} WARNING - 100%|##########| 82.7M/82.7M [00:03<00:00, 26.5MB/s]
+[2026-03-31T20:45:36.985+0000] {logging_mixin.py:188} WARNING - /home/***/.local/lib/python3.10/site-packages/torch/cuda/__init__.py:215 UserWarning:
+NVIDIA GeForce RTX 5060 with CUDA capability sm_120 is not compatible with the current PyTorch installation.
+The current PyTorch install supports CUDA capabilities sm_50 sm_60 sm_70 sm_75 sm_80 sm_86 sm_90.
+If you want to use the NVIDIA GeForce RTX 5060 GPU with PyTorch, please check the instructions at https://pytorch.org/get-started/locally/
+[2026-03-31T20:45:37.159+0000] {train_pipeline.py:75} INFO - Running Feature Extraction for TRAIN...
+[2026-03-31T20:45:46.104+0000] {taskinstance.py:2698} ERROR - Task failed with exception
+Traceback (most recent call last):
+  File "/home/airflow/.local/lib/python3.10/site-packages/airflow/models/taskinstance.py", line 433, in _execute_task
+    result = execute_callable(context=context, **execute_callable_kwargs)
+  File "/home/airflow/.local/lib/python3.10/site-packages/airflow/operators/python.py", line 199, in execute
+    return_value = self.execute_callable()
+  File "/home/airflow/.local/lib/python3.10/site-packages/airflow/operators/python.py", line 216, in execute_callable
+    return self.python_callable(*self.op_args, **self.op_kwargs)
+  File "/opt/airflow/dags/train_pipeline.py", line 76, in extract_features_task
+    X_train, y_train = extract_features(train_loader, "TRAIN")
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+    return func(*args, **kwargs)
+  File "/opt/airflow/dags/train_pipeline.py", line 70, in extract_features
+    output = backbone(x)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torchvision/models/efficientnet.py", line 343, in forward
+    return self._forward_impl(x)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torchvision/models/efficientnet.py", line 333, in _forward_impl
+    x = self.features(x)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/container.py", line 215, in forward
+    input = module(input)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/container.py", line 215, in forward
+    input = module(input)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1518, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1527, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 393, in forward
+    return F.silu(input, inplace=self.inplace)
+  File "/home/airflow/.local/lib/python3.10/site-packages/torch/nn/functional.py", line 2071, in silu
+    return torch._C._nn.silu_(input)
+RuntimeError: CUDA error: no kernel image is available for execution on the device
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1.
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+[2026-03-31T20:45:46.110+0000] {taskinstance.py:1138} INFO - Marking task as FAILED. dag_id=efficientnet_training_pipeline, task_id=extract_features_efficientnet, execution_date=20260331T204446, start_date=20260331T204446, end_date=20260331T204546
+[2026-03-31T20:45:46.116+0000] {standard_task_runner.py:107} ERROR - Failed to execute job 6 for task extract_features_efficientnet (CUDA error: no kernel image is available for execution on the device
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1.
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+; 247)
+[2026-03-31T20:45:46.287+0000] {local_task_job_runner.py:234} INFO - Task exited with return code 1
+[2026-03-31T20:45:46.299+0000] {taskinstance.py:3280} INFO - 0 downstream tasks scheduled from follow-on schedule check

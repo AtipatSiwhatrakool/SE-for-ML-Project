@@ -1,0 +1,26 @@
+[2026-03-31T20:34:18.162+0000] {taskinstance.py:1956} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: efficientnet_training_pipeline.extract_features_efficientnet manual__2026-03-31T20:34:17.118280+00:00 [queued]>
+[2026-03-31T20:34:18.166+0000] {taskinstance.py:1956} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: efficientnet_training_pipeline.extract_features_efficientnet manual__2026-03-31T20:34:17.118280+00:00 [queued]>
+[2026-03-31T20:34:18.167+0000] {taskinstance.py:2170} INFO - Starting attempt 1 of 1
+[2026-03-31T20:34:18.173+0000] {taskinstance.py:2191} INFO - Executing <Task(PythonOperator): extract_features_efficientnet> on 2026-03-31 20:34:17.118280+00:00
+[2026-03-31T20:34:18.178+0000] {standard_task_runner.py:60} INFO - Started process 391 to run task
+[2026-03-31T20:34:18.180+0000] {standard_task_runner.py:87} INFO - Running: ['***', 'tasks', 'run', 'efficientnet_training_pipeline', 'extract_features_efficientnet', 'manual__2026-03-31T20:34:17.118280+00:00', '--job-id', '4', '--raw', '--subdir', 'DAGS_FOLDER/train_pipeline.py', '--cfg-path', '/tmp/tmp33hbmw9_']
+[2026-03-31T20:34:18.181+0000] {standard_task_runner.py:88} INFO - Job 4: Subtask extract_features_efficientnet
+[2026-03-31T20:34:18.212+0000] {task_command.py:423} INFO - Running <TaskInstance: efficientnet_training_pipeline.extract_features_efficientnet manual__2026-03-31T20:34:17.118280+00:00 [running]> on host 4c45a3ee5490
+[2026-03-31T20:34:18.256+0000] {taskinstance.py:2480} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='ml_engineer' AIRFLOW_CTX_DAG_ID='efficientnet_training_pipeline' AIRFLOW_CTX_TASK_ID='extract_features_efficientnet' AIRFLOW_CTX_EXECUTION_DATE='2026-03-31T20:34:17.118280+00:00' AIRFLOW_CTX_TRY_NUMBER='1' AIRFLOW_CTX_DAG_RUN_ID='manual__2026-03-31T20:34:17.118280+00:00'
+[2026-03-31T20:34:20.219+0000] {train_pipeline.py:24} INFO - Using device: cpu
+[2026-03-31T20:34:20.219+0000] {train_pipeline.py:26} INFO - Loading dataset from Hugging Face...
+[2026-03-31T20:34:20.219+0000] {logging_mixin.py:188} WARNING - `trust_remote_code` is not supported anymore.
+Please check that the Hugging Face dataset 'Punnarunwuwu/industry-verification-seml' isn't based on a loading script and remove `trust_remote_code`.
+If the dataset is based on a loading script, please ask the dataset author to remove it and convert it to a standard format like Parquet.
+[2026-03-31T20:34:20.219+0000] {load.py:1663} ERROR - `trust_remote_code` is not supported anymore.
+Please check that the Hugging Face dataset 'Punnarunwuwu/industry-verification-seml' isn't based on a loading script and remove `trust_remote_code`.
+If the dataset is based on a loading script, please ask the dataset author to remove it and convert it to a standard format like Parquet.
+[2026-03-31T20:34:23.725+0000] {logging_mixin.py:188} WARNING - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[2026-03-31T20:34:23.725+0000] {_http.py:916} WARNING - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[2026-03-31T20:34:23.840+0000] {train_pipeline.py:55} INFO - Loading EfficientNetV2-S backbone...
+[2026-03-31T20:34:24.129+0000] {train_pipeline.py:75} INFO - Running Feature Extraction for TRAIN...
+[2026-03-31T20:42:18.487+0000] {local_task_job_runner.py:302} WARNING - State of this instance has been externally set to failed. Terminating instance.
+[2026-03-31T20:42:18.489+0000] {process_utils.py:131} INFO - Sending 15 to group 391. PIDs of all processes in the group: [391]
+[2026-03-31T20:42:18.491+0000] {process_utils.py:86} INFO - Sending the signal 15 to group 391
+[2026-03-31T20:42:18.498+0000] {taskinstance.py:2450} ERROR - Received SIGTERM. Terminating subprocesses.
+[2026-03-31T20:42:18.664+0000] {process_utils.py:79} INFO - Process psutil.Process(pid=391, status='terminated', exitcode=0, started='20:34:18') (391) terminated with exit code 0
