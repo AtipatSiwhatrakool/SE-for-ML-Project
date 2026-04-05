@@ -1,0 +1,19 @@
+{"timestamp":"2026-04-01T06:47:26.366729","level":"info","event":"DAG bundles loaded: dags-folder","logger":"airflow.dag_processing.bundles.manager.DagBundlesManager"}
+{"timestamp":"2026-04-01T06:47:26.367134","level":"info","event":"Filling up the DagBag from /opt/airflow/dags/train_pipeline.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2026-04-01T06:47:28.040569","level":"info","event":"Loading extracted features...","logger":"root"}
+{"timestamp":"2026-04-01T06:47:28.140262","level":"info","event":"Using MLflow tracking URI: http://mlflow:5000","logger":"root"}
+{"timestamp":"2026-04-01T06:47:28.161587Z","level":"error","event":"2026/04/01 06:47:28 INFO mlflow.tracking.fluent: Experiment with name 'Places365_EfficientNetV2S' does not exist. Creating a new experiment.","chan":"stderr","logger":"task"}
+{"timestamp":"2026-04-01T06:47:28.321957","level":"info","event":"Applying PCA (Reducing to 256 dimensions)...","logger":"root"}
+{"timestamp":"2026-04-01T06:47:36.549384","level":"info","event":"Training Logistic Regression...","logger":"root"}
+{"timestamp":"2026-04-01T06:47:43.950980","level":"info","event":"TRAIN | Accuracy: 0.8498 | F1: 0.8218","logger":"root"}
+{"timestamp":"2026-04-01T06:47:43.951143","level":"info","event":"TEST  | Accuracy: 0.8495  | F1: 0.8292","logger":"root"}
+{"timestamp":"2026-04-01T06:47:43.968421","level":"info","event":"Logging models to MLflow...","logger":"root"}
+{"timestamp":"2026-04-01T06:47:43.972566Z","level":"error","event":"2026/04/01 06:47:43 WARNING mlflow.models.model: `artifact_path` is deprecated. Please use `name` instead.","chan":"stderr","logger":"task"}
+{"timestamp":"2026-04-01T06:47:44.061432Z","level":"error","event":"2026/04/01 06:47:44 WARNING mlflow.sklearn: Saving scikit-learn models in the pickle or cloudpickle format requires exercising caution because these formats rely on Python's object serialization mechanism, which can execute arbitrary code during deserialization. The recommended safe alternative is the 'skops' format. For more information, see: https://scikit-learn.org/stable/model_persistence.html","chan":"stderr","logger":"task"}
+{"timestamp":"2026-04-01T06:47:44.063431Z","level":"error","event":"2026/04/01 06:47:44 WARNING mlflow.sklearn: Model was missing function: predict. Not logging python_function flavor!","chan":"stderr","logger":"task"}
+{"timestamp":"2026-04-01T06:47:46.688984Z","level":"error","event":"2026/04/01 06:47:46 WARNING mlflow.models.model: `artifact_path` is deprecated. Please use `name` instead.","chan":"stderr","logger":"task"}
+{"timestamp":"2026-04-01T06:47:46.753092Z","level":"error","event":"2026/04/01 06:47:46 WARNING mlflow.sklearn: Saving scikit-learn models in the pickle or cloudpickle format requires exercising caution because these formats rely on Python's object serialization mechanism, which can execute arbitrary code during deserialization. The recommended safe alternative is the 'skops' format. For more information, see: https://scikit-learn.org/stable/model_persistence.html","chan":"stderr","logger":"task"}
+{"timestamp":"2026-04-01T06:47:48.780623","level":"info","event":"Training and Logging completed successfully.","logger":"root"}
+{"timestamp":"2026-04-01T06:47:48.789160Z","level":"info","event":"🏃 View run PCA256_LogisticRegression at: http://mlflow:5000/#/experiments/2/runs/b73bb4f94ca849388f13189f98ee7b51","chan":"stdout","logger":"task"}
+{"timestamp":"2026-04-01T06:47:48.789278Z","level":"info","event":"🧪 View experiment at: http://mlflow:5000/#/experiments/2","chan":"stdout","logger":"task"}
+{"timestamp":"2026-04-01T06:47:48.799742","level":"info","event":"Done. Returned value was: None","logger":"airflow.task.operators.airflow.providers.standard.operators.python.PythonOperator"}

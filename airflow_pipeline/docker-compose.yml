@@ -9,8 +9,11 @@ x-airflow-common:
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
+    AIRFLOW__API_AUTH__JWT_SECRET: gpPLy2XwOF72TRVUbhierg==
+    AIRFLOW__CORE__INTERNAL_API_SECRET_KEY: gpPLy2XwOF72TRVUbhierg==
+    AIRFLOW__WEBSERVER__SECRET_KEY: gpPLy2XwOF72TRVUbhierg==
     MLFLOW_TRACKING_URI: http://mlflow:5000
-    # To prevent issues with duplicate OMP threads in local containers
     KMP_DUPLICATE_LIB_OK: "TRUE"
   volumes:
     - ./dags:/opt/airflow/dags
@@ -51,11 +54,11 @@ services:
 
   airflow-webserver:
     <<: *airflow-common
-    command: webserver
+    command: api-server
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/public/monitor/health"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -80,8 +83,14 @@ services:
 
   mlflow:
     build: .
+    environment:
+      - MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING=false
+      - MLFLOW_DISABLE_ENV_MANAGER=true
+      - MLFLOW_HOST=0.0.0.0
+      - MLFLOW_SERVER_ALLOWED_HOSTS=*
+      - MLFLOW_SERVER_DISABLE_SECURITY_MIDDLEWARE=true
     entrypoint: ["/bin/bash", "-c"]
-    command: ["mlflow server --backend-store-uri sqlite:////opt/airflow/mlruns/mlflow.db --default-artifact-root /opt/airflow/mlruns --host 0.0.0.0 -p 5000"]
+    command: ["mlflow server --host 0.0.0.0 --backend-store-uri sqlite:////opt/airflow/mlruns/mlflow.db --default-artifact-root /opt/airflow/mlruns --serve-artifacts"]
     ports:
       - "5000:5000"
     volumes:

@@ -171,7 +171,7 @@ with DAG(
     'efficientnet_training_pipeline',
     default_args=default_args,
     description='A simple training pipeline with EfficientNetV2-S, PCA, and Logistic Regression',
-    schedule_interval=None,
+    schedule=None,
     catchup=False,
     tags=['image_classification', 'mlflow']
 ) as dag:
