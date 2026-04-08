@@ -1,4 +1,0 @@
-{"timestamp":"2026-04-08T23:28:57.602430","level":"info","event":"DAG bundles loaded: dags-folder","logger":"airflow.dag_processing.bundles.manager.DagBundlesManager"}
-{"timestamp":"2026-04-08T23:28:58.615524Z","level":"warning","event":"Process exited abnormally","exit_code":1,"logger":"task"}
-{"timestamp":"2026-04-08T23:28:57.602846","level":"info","event":"Filling up the DagBag from /opt/airflow/dags/train_pipeline.py","logger":"airflow.models.dagbag.DagBag"}
-{"timestamp":"2026-04-08T23:28:57.608137","level":"error","event":"DAG not found during start up","dag_id":"efficientnet_training_pipeline","bundle":"BundleInfo(name='dags-folder', version=None)","path":"train_pipeline.py","logger":"task"}
