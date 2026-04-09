@@ -1,0 +1,62 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment files
+.env
+.env.local
+.env.*
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Airflow specifics
+airflow_pipeline/logs/
+airflow_pipeline/data/
+airflow_pipeline/mlruns/
+airflow_pipeline/plugins/
+airflow-webserver.pid
+
+# Checkpoints and models
+*.ckpt
+*.pt
+*.pth
+*.pkl
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+
+# Jupyter Notebook temporary data
+.ipynb_checkpoints/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing / Coverage
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
