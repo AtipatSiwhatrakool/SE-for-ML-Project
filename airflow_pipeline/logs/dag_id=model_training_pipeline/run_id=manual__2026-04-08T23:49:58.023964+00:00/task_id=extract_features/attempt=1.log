@@ -1,0 +1,30 @@
+{"timestamp":"2026-04-08T23:49:58.827189","level":"info","event":"DAG bundles loaded: dags-folder","logger":"airflow.dag_processing.bundles.manager.DagBundlesManager"}
+{"timestamp":"2026-04-08T23:49:58.827595","level":"info","event":"Filling up the DagBag from /opt/airflow/dags/train_pipeline.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2026-04-08T23:50:00.987728","level":"info","event":"Device: cuda | half-precision: False","logger":"root"}
+{"timestamp":"2026-04-08T23:50:00.988087","level":"info","event":"Loading dataset from Hugging Face (this may take 2-5 min)...","logger":"root"}
+{"timestamp":"2026-04-08T23:50:04.325959Z","level":"error","event":"Found cached dataset seml-industry-ver (/home/airflow/.cache/huggingface/datasets/Punnarunwuwu___seml-industry-ver/default/0.0.0/16ed90f0f5170dc73bc2c94eca44c692f0b46fcd)","chan":"stderr","logger":"task"}
+{"timestamp":"2026-04-08T23:50:04.325920","level":"info","event":"Found cached dataset seml-industry-ver (/home/airflow/.cache/huggingface/datasets/Punnarunwuwu___seml-industry-ver/default/0.0.0/16ed90f0f5170dc73bc2c94eca44c692f0b46fcd)","logger":"datasets.builder"}
+{"timestamp":"2026-04-08T23:50:04.334966","level":"info","event":"Dataset loaded. Concatenating splits...","logger":"root"}
+{"timestamp":"2026-04-08T23:50:04.338404","level":"info","event":"Train size: 21600 | Test size: 1200","logger":"root"}
+{"timestamp":"2026-04-08T23:50:04.342077","level":"info","event":"Loading ResNet34 backbone...","logger":"root"}
+{"timestamp":"2026-04-08T23:50:05.760736","level":"warning","event":"Applied workaround for CuDNN issue, install nvrtc.so (Triggered internally at ../aten/src/ATen/native/cudnn/Conv_v8.cpp:84.)","category":"UserWarning","filename":"/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/conv.py","lineno":456,"logger":"py.warnings"}
+{"timestamp":"2026-04-08T23:50:06.482914","level":"info","event":"[TRAIN/ResNet34] batch 1/43","logger":"root"}
+{"timestamp":"2026-04-08T23:50:35.226304","level":"info","event":"[TRAIN/ResNet34] batch 21/43","logger":"root"}
+{"timestamp":"2026-04-08T23:51:04.252493","level":"info","event":"[TRAIN/ResNet34] batch 41/43","logger":"root"}
+{"timestamp":"2026-04-08T23:51:06.704287","level":"info","event":"[TRAIN/ResNet34] batch 43/43","logger":"root"}
+{"timestamp":"2026-04-08T23:51:06.868901","level":"info","event":"Saved TRAIN/ResNet34 features → /opt/airflow/data/X_train_resnet.npy","logger":"root"}
+{"timestamp":"2026-04-08T23:51:08.168320","level":"info","event":"[TEST/ResNet34] batch 1/3","logger":"root"}
+{"timestamp":"2026-04-08T23:51:10.727328","level":"info","event":"[TEST/ResNet34] batch 3/3","logger":"root"}
+{"timestamp":"2026-04-08T23:51:11.040141","level":"info","event":"Saved TEST/ResNet34 features → /opt/airflow/data/X_test_resnet.npy","logger":"root"}
+{"timestamp":"2026-04-08T23:51:11.217533","level":"info","event":"Saving labels...","logger":"root"}
+{"timestamp":"2026-04-08T23:51:41.264701","level":"info","event":"Loading EfficientNetV2-S backbone...","logger":"root"}
+{"timestamp":"2026-04-08T23:51:42.925788","level":"info","event":"[TRAIN/EffNetV2-S] batch 1/43","logger":"root"}
+{"timestamp":"2026-04-08T23:52:32.185467","level":"info","event":"[TRAIN/EffNetV2-S] batch 21/43","logger":"root"}
+{"timestamp":"2026-04-08T23:53:23.656744","level":"info","event":"[TRAIN/EffNetV2-S] batch 41/43","logger":"root"}
+{"timestamp":"2026-04-08T23:53:28.429862","level":"info","event":"[TRAIN/EffNetV2-S] batch 43/43","logger":"root"}
+{"timestamp":"2026-04-08T23:53:28.879599","level":"info","event":"Saved TRAIN/EffNetV2-S features → /opt/airflow/data/X_train_effnet.npy","logger":"root"}
+{"timestamp":"2026-04-08T23:53:30.243549","level":"info","event":"[TEST/EffNetV2-S] batch 1/3","logger":"root"}
+{"timestamp":"2026-04-08T23:53:35.062747","level":"info","event":"[TEST/EffNetV2-S] batch 3/3","logger":"root"}
+{"timestamp":"2026-04-08T23:53:35.710100","level":"info","event":"Saved TEST/EffNetV2-S features → /opt/airflow/data/X_test_effnet.npy","logger":"root"}
+{"timestamp":"2026-04-08T23:53:35.962978","level":"info","event":"All features saved to /opt/airflow/data","logger":"root"}
+{"timestamp":"2026-04-08T23:53:35.963367","level":"info","event":"Done. Returned value was: None","logger":"airflow.task.operators.airflow.providers.standard.operators.python.PythonOperator"}

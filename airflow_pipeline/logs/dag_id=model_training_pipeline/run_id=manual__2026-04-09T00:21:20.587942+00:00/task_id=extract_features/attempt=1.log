@@ -1,0 +1,36 @@
+{"timestamp":"2026-04-09T00:21:20.897405","level":"info","event":"DAG bundles loaded: dags-folder","logger":"airflow.dag_processing.bundles.manager.DagBundlesManager"}
+{"timestamp":"2026-04-09T00:21:20.897919","level":"info","event":"Filling up the DagBag from /opt/airflow/dags/train_pipeline.py","logger":"airflow.models.dagbag.DagBag"}
+{"timestamp":"2026-04-09T00:21:23.087113","level":"info","event":"Device: cuda | half-precision: False","logger":"root"}
+{"timestamp":"2026-04-09T00:21:23.087504","level":"info","event":"Loading dataset from Hugging Face (this may take 2-5 min)...","logger":"root"}
+{"timestamp":"2026-04-09T00:21:26.564101Z","level":"error","event":"Found cached dataset seml-industry-ver (/home/airflow/.cache/huggingface/datasets/Punnarunwuwu___seml-industry-ver/default/0.0.0/16ed90f0f5170dc73bc2c94eca44c692f0b46fcd)","chan":"stderr","logger":"task"}
+{"timestamp":"2026-04-09T00:21:26.564043","level":"info","event":"Found cached dataset seml-industry-ver (/home/airflow/.cache/huggingface/datasets/Punnarunwuwu___seml-industry-ver/default/0.0.0/16ed90f0f5170dc73bc2c94eca44c692f0b46fcd)","logger":"datasets.builder"}
+{"timestamp":"2026-04-09T00:21:26.573771","level":"info","event":"Dataset loaded. Separating splits...","logger":"root"}
+{"timestamp":"2026-04-09T00:21:26.573859","level":"info","event":"Train_v1 size: 10800 | Train_v2 size: 10800 | Test size: 1200","logger":"root"}
+{"timestamp":"2026-04-09T00:21:26.579576","level":"info","event":"Loading ResNet34 backbone...","logger":"root"}
+{"timestamp":"2026-04-09T00:21:27.968431","level":"warning","event":"Applied workaround for CuDNN issue, install nvrtc.so (Triggered internally at ../aten/src/ATen/native/cudnn/Conv_v8.cpp:84.)","category":"UserWarning","filename":"/home/airflow/.local/lib/python3.10/site-packages/torch/nn/modules/conv.py","lineno":456,"logger":"py.warnings"}
+{"timestamp":"2026-04-09T00:21:28.657623","level":"info","event":"[TRAIN_V1/ResNet34] batch 1/22","logger":"root"}
+{"timestamp":"2026-04-09T00:21:58.102373","level":"info","event":"[TRAIN_V1/ResNet34] batch 21/22","logger":"root"}
+{"timestamp":"2026-04-09T00:21:58.979449","level":"info","event":"[TRAIN_V1/ResNet34] batch 22/22","logger":"root"}
+{"timestamp":"2026-04-09T00:21:59.066919","level":"info","event":"Saved TRAIN_V1/ResNet34 features → /opt/airflow/data/X_train_v1_resnet.npy","logger":"root"}
+{"timestamp":"2026-04-09T00:22:00.617562","level":"info","event":"[TRAIN_V2/ResNet34] batch 1/22","logger":"root"}
+{"timestamp":"2026-04-09T00:22:30.768749","level":"info","event":"[TRAIN_V2/ResNet34] batch 21/22","logger":"root"}
+{"timestamp":"2026-04-09T00:22:31.664484","level":"info","event":"[TRAIN_V2/ResNet34] batch 22/22","logger":"root"}
+{"timestamp":"2026-04-09T00:22:31.752465","level":"info","event":"Saved TRAIN_V2/ResNet34 features → /opt/airflow/data/X_train_v2_resnet.npy","logger":"root"}
+{"timestamp":"2026-04-09T00:22:33.079255","level":"info","event":"[TEST/ResNet34] batch 1/3","logger":"root"}
+{"timestamp":"2026-04-09T00:22:35.655029","level":"info","event":"[TEST/ResNet34] batch 3/3","logger":"root"}
+{"timestamp":"2026-04-09T00:22:35.966323","level":"info","event":"Saved TEST/ResNet34 features → /opt/airflow/data/X_test_resnet.npy","logger":"root"}
+{"timestamp":"2026-04-09T00:22:36.162178","level":"info","event":"Saving labels...","logger":"root"}
+{"timestamp":"2026-04-09T00:23:05.846031","level":"info","event":"Loading EfficientNetV2-S backbone...","logger":"root"}
+{"timestamp":"2026-04-09T00:23:07.446640","level":"info","event":"[TRAIN_V1/EffNetV2-S] batch 1/22","logger":"root"}
+{"timestamp":"2026-04-09T00:23:56.659702","level":"info","event":"[TRAIN_V1/EffNetV2-S] batch 21/22","logger":"root"}
+{"timestamp":"2026-04-09T00:23:58.543765","level":"info","event":"[TRAIN_V1/EffNetV2-S] batch 22/22","logger":"root"}
+{"timestamp":"2026-04-09T00:23:58.732459","level":"info","event":"Saved TRAIN_V1/EffNetV2-S features → /opt/airflow/data/X_train_v1_effnet.npy","logger":"root"}
+{"timestamp":"2026-04-09T00:24:00.158592","level":"info","event":"[TRAIN_V2/EffNetV2-S] batch 1/22","logger":"root"}
+{"timestamp":"2026-04-09T00:24:51.511372","level":"info","event":"[TRAIN_V2/EffNetV2-S] batch 21/22","logger":"root"}
+{"timestamp":"2026-04-09T00:24:53.712964","level":"info","event":"[TRAIN_V2/EffNetV2-S] batch 22/22","logger":"root"}
+{"timestamp":"2026-04-09T00:24:53.935706","level":"info","event":"Saved TRAIN_V2/EffNetV2-S features → /opt/airflow/data/X_train_v2_effnet.npy","logger":"root"}
+{"timestamp":"2026-04-09T00:24:55.240745","level":"info","event":"[TEST/EffNetV2-S] batch 1/3","logger":"root"}
+{"timestamp":"2026-04-09T00:24:59.970053","level":"info","event":"[TEST/EffNetV2-S] batch 3/3","logger":"root"}
+{"timestamp":"2026-04-09T00:25:00.608859","level":"info","event":"Saved TEST/EffNetV2-S features → /opt/airflow/data/X_test_effnet.npy","logger":"root"}
+{"timestamp":"2026-04-09T00:25:00.842460","level":"info","event":"All features saved to /opt/airflow/data","logger":"root"}
+{"timestamp":"2026-04-09T00:25:00.842861","level":"info","event":"Done. Returned value was: None","logger":"airflow.task.operators.airflow.providers.standard.operators.python.PythonOperator"}
