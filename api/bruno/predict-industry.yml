@@ -1,0 +1,24 @@
+info:
+  name: predict-industry
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: http://localhost:8000/api/v1/predict
+  body:
+    type: multipart-form
+    data:
+      - name: file
+        type: file
+        value:
+          - samples/salon.jpg
+        contentType: |
+          image/jpeg
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
