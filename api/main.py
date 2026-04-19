@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from torchvision import transforms
 from torchvision.models import efficientnet_v2_s, EfficientNet_V2_S_Weights
@@ -124,3 +125,7 @@ async def predict(file: UploadFile = File(...)):
             "inference_time_ms": round(elapsed_ms, 2),
         }
     }
+
+
+STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
