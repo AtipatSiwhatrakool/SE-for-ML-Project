@@ -1,0 +1,19 @@
+@startuml C4Context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_WITH_LEGEND()
+
+title System Context Diagram for Industry Verification ML System
+
+Person(customer, "Loan Applicant", "A customer applying for a loan who provides their business information.")
+Person(reviewer, "Manual Review Officer", "Bank staff who reviews uncertain model predictions.")
+
+System(ml_system, "Industry Verification ML System", "Verifies business industries using storefront images.")
+
+Rel(customer, ml_system, "Uploads storefront photo and declared industry")
+Rel(ml_system, customer, "Returns verification status in under 2 seconds")
+
+Rel(ml_system, reviewer, "Routes low-confidence cases (<60%)", "System UI")
+Rel(reviewer, ml_system, "Provides final human decision", "System UI")
+
+@enduml

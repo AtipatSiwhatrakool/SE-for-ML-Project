@@ -1,0 +1,35 @@
+@startuml C4Container
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Container Diagram for Industry Verification ML System
+
+Person(applicant, "Loan Applicant", "Submits storefront image for verification.")
+Person(reviewer, "Manual Review Officer", "Reviews low-confidence predictions (<60%).")
+
+System_Ext(hf_hub, "Hugging Face Hub", "Hosts dataset for training.")
+System_Ext(gpu, "NVIDIA GPU", "CUDA acceleration for model training.")
+
+System_Boundary(inference, "Inference Pipeline") {
+    Container(fastapi, "FastAPI REST API", "Python/FastAPI", "Serves real-time predictions.")
+}
+
+System_Boundary(training, "Training Pipeline (Docker Compose)") {
+    Container(airflow, "Apache Airflow", "Python/Airflow 3.0", "Orchestrates training DAGs.")
+    Container(mlflow, "MLflow Server", "Python/MLflow", "Tracks experiments, manages model registry.")
+    ContainerDb(postgres, "PostgreSQL", "PostgreSQL 13", "Airflow metadata.")
+    ContainerDb(mlruns, "MLruns Volume", "Local Filesystem", "Model artifacts and MLflow DB.")
+}
+
+Rel(applicant, fastapi, "Uploads storefront image", "multipart/form-data")
+Rel(fastapi, applicant, "Returns prediction + confidence", "JSON")
+Rel(fastapi, reviewer, "Routes low-confidence cases", "notification")
+Rel(fastapi, mlruns, "Reads model artifacts at startup", "filesystem")
+Rel(airflow, mlflow, "Logs params, metrics, models", "HTTP REST")
+Rel(airflow, mlruns, "Saves model artifacts", "filesystem")
+Rel(airflow, hf_hub, "Downloads dataset", "HTTPS")
+Rel(airflow, gpu, "GPU-accelerated training", "CUDA")
+Rel(airflow, postgres, "Reads/writes DAG state", "SQL")
+
+@enduml
