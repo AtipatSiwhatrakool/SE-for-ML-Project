@@ -1,0 +1,17 @@
+opencollection: 1.0.0
+
+info:
+  name: SE-for-ML-API
+  version: 1.0.0
+  description: Places365 Classification API
+
+config:
+  proxy:
+    inherit: true
+  brunoVersion: 1.0.0
+
+collections:
+  - name: Predict
+    requests:
+      - predict-industry.yml
+      - health-check.yml

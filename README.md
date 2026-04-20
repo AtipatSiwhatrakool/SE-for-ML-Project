@@ -31,6 +31,12 @@ Before running the application, please review your hardware configuration. If yo
    docker logs airflow_pipeline-airflow-webserver-1 2>&1 | grep -i password
    ```
 
+4. **Running the API**:
+   To start the FastAPI server, run:
+   ```bash
+   uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
+   ```
+
 ## Model Inference & Usage
 
 **Note:** You do not need to run the Airflow DAG to train a model! The models have already been trained. You can directly load and choose the best model from the `mlruns` directory located inside `airflow_pipeline/`.

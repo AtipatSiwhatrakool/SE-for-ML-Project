@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+train_pipeline/train_pipeline.py.log
+airflow_pipeline/**/**/**/**/train_pipeline.py.log
