@@ -1,6 +1,9 @@
+import io
 import os
 import time
 import pickle
+import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,13 +14,23 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from torchvision import transforms
-from torchvision.models import efficientnet_v2_s, EfficientNet_V2_S_Weights
+from torchvision.models import EfficientNet_V2_S_Weights, efficientnet_v2_s
+
+from api.monitoring import (
+    append_prediction_log,
+    compute_blur_score,
+    compute_brightness,
+    pil_to_rgb_array,
+    utc_now_iso,
+)
 
 # ── Paths ───────────────────────────────────────────────────────────────────
 PCA_PATH = Path("airflow_pipeline/mlruns/1/models/m-99ea752fc1b7401e997dfe755d74e8d6/artifacts/model.pkl")
 CLF_PATH = Path("airflow_pipeline/mlruns/1/models/m-1b25cd047c0d48f3abda57a99fdf9f38/artifacts/model.pkl")
 
 # ── Class Mapping ────────────────────────────────────────────────────────────
+# NOTE: Current repo has 6 classes. If your team updates the model to 8 classes,
+# update this mapping to match the trained classifier output.
 CLASS_NAMES = {
     0: "beauty_salon",
     1: "drugstore",
@@ -26,6 +39,7 @@ CLASS_NAMES = {
     4: "apartment_building",
     5: "supermarket",
 }
+
 CONFIDENCE_THRESHOLD = 0.60
 
 # ── Global model references (loaded once at startup) ────────────────────────
@@ -68,7 +82,7 @@ async def lifespan(app: FastAPI):
     load_models()
     print(f"Models loaded on {device}")
     yield
-    # Shutdown: cleanup
+
     global backbone, pca, clf
     del backbone, pca, clf
 
@@ -76,7 +90,7 @@ async def lifespan(app: FastAPI):
 # ── FastAPI App ──────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Places365 Classification API",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -95,11 +109,23 @@ async def predict(file: UploadFile = File(...)):
     if not (filename.endswith(".jpg") or filename.endswith(".jpeg") or filename.endswith(".png")):
         return JSONResponse(
             status_code=400,
-            content={"status": "error", "message": "Unsupported file type. Use .jpg or .png"}
+            content={"status": "error", "message": "Unsupported file type. Use .jpg or .png"},
         )
 
-    # Load and preprocess image
-    image = Image.open(file.file).convert("RGB")
+    try:
+        raw_bytes = await file.read()
+        image = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
+    except Exception:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Invalid or corrupted image file"},
+        )
+
+    width, height = image.size
+    rgb = pil_to_rgb_array(image)
+    brightness = compute_brightness(rgb)
+    blur_score = compute_blur_score(rgb)
+
     img_tensor = transform(image).unsqueeze(0)
 
     # Extract features
@@ -108,22 +134,40 @@ async def predict(file: UploadFile = File(...)):
 
     # Apply PCA
     features_pca = pca.transform(features)
+    pred = int(clf.predict(features_pca)[0])
+
 
     # Predict
     pred = clf.predict(features_pca)[0]
     proba = clf.predict_proba(features_pca)[0]
     confidence = float(proba[pred])
 
-    elapsed_ms = (time.perf_counter() - start_time) * 1000
+    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+    predicted_class = CLASS_NAMES[pred]
+    requires_manual_review = confidence < CONFIDENCE_THRESHOLD
+
+    append_prediction_log({
+        "request_id": str(uuid.uuid4()),
+        "timestamp": utc_now_iso(),
+        "filename": file.filename or "",
+        "predicted_class": predicted_class,
+        "confidence_score": round(confidence, 6),
+        "requires_manual_review": requires_manual_review,
+        "inference_time_ms": round(elapsed_ms, 2),
+        "brightness": round(brightness, 4),
+        "blur_score": round(blur_score, 4),
+        "width": width,
+        "height": height,
+    })
 
     return {
         "status": "success",
         "data": {
-            "predicted_industry": CLASS_NAMES[pred],
+            "predicted_industry": predicted_class,
             "confidence_score": round(confidence, 4),
-            "requires_manual_review": confidence < CONFIDENCE_THRESHOLD,
+            "requires_manual_review": requires_manual_review,
             "inference_time_ms": round(elapsed_ms, 2),
-        }
+        },
     }
 
 
