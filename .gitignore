@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
 train_pipeline/train_pipeline.py.log
-airflow_pipeline/**/**/**/**/train_pipeline.py.log
-/docs/plantuml.jar
+airflow_pipeline/**/*.log
+airflow_pipeline/data/drift/prediction_logs.csv
+airflow_pipeline/data/drift/baseline_reference.json
+airflow_pipeline/data/drift/reports/
