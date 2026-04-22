@@ -8,16 +8,21 @@ from typing import Dict, List
 
 import numpy as np
 import pandas as pd
+import psycopg2
 from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import BranchPythonOperator, PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
-# Airflow-side shared path
+# Airflow-side shared path (baseline + reports still land on the bind-mounted volume)
 DRIFT_DIR = Path("/opt/airflow/data/drift")
-PREDICTION_LOG_CSV = DRIFT_DIR / "prediction_logs.csv"
 BASELINE_JSON = DRIFT_DIR / "baseline_reference.json"
 REPORTS_DIR = DRIFT_DIR / "reports"
+
+PREDICTIONS_DATABASE_URL = os.getenv(
+    "PREDICTIONS_DATABASE_URL",
+    "postgresql://predictions:predictions@predictions-db:5432/predictions",
+)
 
 # Current repo classes (6 classes). Update if your trained model changes.
 CLASS_NAMES = [
@@ -40,10 +45,18 @@ def _ensure_dirs():
 
 
 def _read_logs() -> pd.DataFrame:
-    if not PREDICTION_LOG_CSV.exists():
-        raise FileNotFoundError(f"Prediction log not found: {PREDICTION_LOG_CSV}")
+    with psycopg2.connect(PREDICTIONS_DATABASE_URL) as conn:
+        df = pd.read_sql_query(
+            """
+            SELECT request_id, timestamp, filename, predicted_class,
+                   confidence_score, requires_manual_review, inference_time_ms,
+                   brightness, blur_score, width, height
+            FROM prediction_logs
+            ORDER BY timestamp ASC
+            """,
+            conn,
+        )
 
-    df = pd.read_csv(PREDICTION_LOG_CSV)
     if df.empty:
         return df
 
@@ -122,21 +135,6 @@ def bootstrap_baseline_task(**context):
         logging.info("Baseline already exists at %s", BASELINE_JSON)
         return {"status": "exists", "path": str(BASELINE_JSON)}
 
-    if not PREDICTION_LOG_CSV.exists():
-        payload = {
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "mode": "uniform_bootstrap_no_logs",
-            "class_distribution": _uniform_class_distribution(),
-            "quality_reference": {
-                "brightness": [128.0] * 50,
-                "blur_score": [100.0] * 50,
-            },
-        }
-        with BASELINE_JSON.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, ensure_ascii=False)
-        logging.warning("No prediction logs found. Created default baseline.")
-        return {"status": "created_default", "path": str(BASELINE_JSON)}
-
     df = _read_logs()
 
     if df.empty:
@@ -175,21 +173,6 @@ def compute_drift_task(**context):
 
     if not BASELINE_JSON.exists():
         raise FileNotFoundError(f"Baseline not found: {BASELINE_JSON}")
-
-    if not PREDICTION_LOG_CSV.exists():
-        report = {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "status": "no_prediction_logs",
-            "drift_detected": False,
-            "psi": 0.0,
-            "csi_brightness": 0.0,
-            "csi_blur_score": 0.0,
-            "threshold": DRIFT_THRESHOLD,
-        }
-        latest_path = REPORTS_DIR / "latest_report.json"
-        with latest_path.open("w", encoding="utf-8") as f:
-            json.dump(report, f, indent=2, ensure_ascii=False)
-        return report
 
     with BASELINE_JSON.open("r", encoding="utf-8") as f:
         baseline = json.load(f)

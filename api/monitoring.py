@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-import csv
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
 import numpy as np
+import psycopg2
 from PIL import Image
 
-# Host-side path. When FastAPI runs from repo root, this points to the shared folder.
+PREDICTIONS_DATABASE_URL = os.getenv(
+    "PREDICTIONS_DATABASE_URL",
+    "postgresql://predictions:predictions@localhost:5433/predictions",
+)
+
 DRIFT_DIR = Path("airflow_pipeline/data/drift")
-PREDICTION_LOG_CSV = DRIFT_DIR / "prediction_logs.csv"
 BASELINE_JSON = DRIFT_DIR / "baseline_reference.json"
 REPORTS_DIR = DRIFT_DIR / "reports"
 
@@ -55,32 +59,32 @@ def compute_blur_score(rgb: np.ndarray) -> float:
 
 
 def append_prediction_log(row: Dict[str, Any]) -> None:
-    ensure_monitoring_dirs()
-
-    fieldnames = [
-        "request_id",
-        "timestamp",
-        "filename",
-        "predicted_class",
-        "confidence_score",
-        "requires_manual_review",
-        "inference_time_ms",
-        "brightness",
-        "blur_score",
-        "width",
-        "height",
-    ]
-
-    file_exists = PREDICTION_LOG_CSV.exists()
-    with PREDICTION_LOG_CSV.open("a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow({k: row.get(k) for k in fieldnames})
+    with psycopg2.connect(PREDICTIONS_DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO prediction_logs (
+                request_id, timestamp, filename, predicted_class,
+                confidence_score, requires_manual_review, inference_time_ms,
+                brightness, blur_score, width, height
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                row["request_id"],
+                row["timestamp"],
+                row.get("filename"),
+                row["predicted_class"],
+                row["confidence_score"],
+                row["requires_manual_review"],
+                row["inference_time_ms"],
+                row["brightness"],
+                row["blur_score"],
+                row["width"],
+                row["height"],
+            ),
+        )
 
 
 def write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
-
