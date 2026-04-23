@@ -38,6 +38,15 @@ DRIFT_THRESHOLD = float(os.getenv("DRIFT_THRESHOLD", "0.25"))
 WINDOW_DAYS = int(os.getenv("DRIFT_WINDOW_DAYS", "7"))
 MIN_ROWS_FOR_DRIFT = int(os.getenv("DRIFT_MIN_ROWS", "20"))
 
+# Rejection-rate signal over the same window
+REJECTION_RATE_THRESHOLD = float(os.getenv("REJECTION_RATE_THRESHOLD", "0.30"))
+MIN_REVIEWED_IN_WINDOW = int(os.getenv("MIN_REVIEWED_IN_WINDOW", "10"))
+
+# Trigger smoothing
+RETRAIN_COOLDOWN_DAYS = int(os.getenv("RETRAIN_COOLDOWN_DAYS", "7"))
+DRIFT_PERSISTENCE_WINDOW = int(os.getenv("DRIFT_PERSISTENCE_WINDOW", "5"))
+DRIFT_PERSISTENCE_K = int(os.getenv("DRIFT_PERSISTENCE_K", "3"))
+
 
 def _ensure_dirs():
     DRIFT_DIR.mkdir(parents=True, exist_ok=True)
@@ -113,6 +122,27 @@ def _distribution_from_edges(values: np.ndarray, edges: np.ndarray) -> np.ndarra
     if total <= 0:
         return np.full(len(hist), 1.0 / len(hist), dtype=float)
     return hist / total
+
+
+def _compute_rejection_rate(window_start: datetime, window_end: datetime) -> tuple:
+    """Return (rejection_rate, reviewed_count) over prediction_logs in [start, end)."""
+    with psycopg2.connect(PREDICTIONS_DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                COUNT(*) FILTER (WHERE review_status = 'rejected') AS rejected,
+                COUNT(*) FILTER (WHERE review_status IN ('approved', 'rejected')) AS reviewed
+            FROM prediction_logs
+            WHERE timestamp >= %s AND timestamp < %s
+            """,
+            (window_start, window_end),
+        )
+        rejected, reviewed = cur.fetchone()
+    rejected = int(rejected or 0)
+    reviewed = int(reviewed or 0)
+    if reviewed == 0:
+        return 0.0, 0
+    return float(rejected) / float(reviewed), reviewed
 
 
 def _csi_from_samples(expected_values: List[float], actual_values: List[float]) -> float:
@@ -231,6 +261,8 @@ def compute_drift_task(**context):
     csi_brightness = _csi_from_samples(expected_brightness, current_brightness)
     csi_blur = _csi_from_samples(expected_blur, current_blur)
 
+    rejection_rate, reviewed_in_window = _compute_rejection_rate(window_start, now)
+
     reasons = []
     if psi > DRIFT_THRESHOLD:
         reasons.append("psi")
@@ -238,6 +270,8 @@ def compute_drift_task(**context):
         reasons.append("csi_brightness")
     if csi_blur > DRIFT_THRESHOLD:
         reasons.append("csi_blur_score")
+    if reviewed_in_window >= MIN_REVIEWED_IN_WINDOW and rejection_rate > REJECTION_RATE_THRESHOLD:
+        reasons.append("rejection_rate")
 
     drift_detected = len(reasons) > 0
 
@@ -252,6 +286,9 @@ def compute_drift_task(**context):
         "psi": round(float(psi), 6),
         "csi_brightness": round(float(csi_brightness), 6),
         "csi_blur_score": round(float(csi_blur), 6),
+        "rejection_rate": round(float(rejection_rate), 6),
+        "reviewed_in_window": reviewed_in_window,
+        "rejection_rate_threshold": REJECTION_RATE_THRESHOLD,
         "drift_detected": drift_detected,
         "reasons": reasons,
         "current_class_distribution": current_class_dist,
@@ -273,9 +310,51 @@ def compute_drift_task(**context):
 
 def branch_on_drift(**context):
     report = context["ti"].xcom_pull(task_ids="compute_drift_report")
-    if report and report.get("drift_detected"):
-        return "trigger_model_retraining"
-    return "skip_model_retraining"
+    if not (report and report.get("drift_detected")):
+        logging.info("No drift detected; skipping retrain.")
+        return "skip_model_retraining"
+
+    # Persistence: drift must have fired in K of the last M reports
+    recent_reports = sorted(REPORTS_DIR.glob("drift_report_*.json"))[-DRIFT_PERSISTENCE_WINDOW:]
+    persisted_count = 0
+    for path in recent_reports:
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                r = json.load(f)
+            if r.get("drift_detected"):
+                persisted_count += 1
+        except Exception as exc:
+            logging.warning(f"Could not read {path}: {exc}")
+
+    if persisted_count < DRIFT_PERSISTENCE_K:
+        logging.info(
+            f"Drift detected this run but only {persisted_count}/{len(recent_reports)} "
+            f"of the last {DRIFT_PERSISTENCE_WINDOW} runs had drift "
+            f"(need {DRIFT_PERSISTENCE_K}). Skipping retrain (persistence)."
+        )
+        return "skip_model_retraining"
+
+    # Cooldown: don't retrigger if model_training_pipeline has run recently
+    try:
+        from airflow.models import DagRun
+        cutoff = datetime.now(timezone.utc) - timedelta(days=RETRAIN_COOLDOWN_DAYS)
+        runs = DagRun.find(dag_id="model_training_pipeline")
+        for run in runs:
+            sd = getattr(run, "start_date", None)
+            if sd and sd >= cutoff:
+                logging.info(
+                    f"model_training_pipeline ran at {sd.isoformat()} "
+                    f"(within {RETRAIN_COOLDOWN_DAYS}-day cooldown). Skipping retrain."
+                )
+                return "skip_model_retraining"
+    except Exception as exc:
+        logging.warning(f"Cooldown check failed; proceeding with retrain: {exc}")
+
+    logging.info(
+        f"Drift detected, persisted ({persisted_count}/{DRIFT_PERSISTENCE_WINDOW}), "
+        f"cooldown cleared. Triggering retrain."
+    )
+    return "trigger_model_retraining"
 
 
 default_args = {
