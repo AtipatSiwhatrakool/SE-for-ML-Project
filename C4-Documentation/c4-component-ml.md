@@ -18,27 +18,30 @@ docker run --rm -v "$PWD/C4-Documentation:/work" plantuml/plantuml \
   -tpng /work/c4-component-ml.puml
 ```
 
-## Scope
+## Scope — ML component only
 
-Covers the ML subsystem only (per rubric "Component Diagram — ML component only"):
+Per rubric "Component Diagram (ML component only) — internal structure of key containers" — this diagram shows ML-related components only. **Excluded on purpose**: auth, session management, review CRUD, user account management, static file serving — those are orthogonal to the ML subsystem.
 
-- **FastAPI Inference Service** container — how a request becomes a prediction.
-- **Airflow Scheduler** container — drift detection DAG + training DAG components.
-- Shared data stores that link them: `predictions-db`, `current_model.json`, `baseline_reference.json`, MLflow store.
+Included:
+- **FastAPI — ML Inference** container — the components that turn a request into a prediction.
+- **Airflow DAG: `drift_detection_pipeline`** — the four daily drift tasks.
+- **Airflow DAG: `model_training_pipeline`** — the three training tasks.
+- Shared data stores that link them: `prediction_logs`, `current_model.json`, `baseline_reference.json`, MLflow store.
 
 ## Components
 
-### FastAPI Inference Service
+### FastAPI — ML Inference
 
-| Component | File | Role |
+| Component | Location | Role |
 |---|---|---|
-| Auth | `api/auth.py` | bcrypt verify against `users` table, signed-cookie session, `require_role()` FastAPI dependency |
-| HTTP Endpoints | `api/main.py` | `/predict`, `/review/*`, `/admin/reload`, `/auth/*`, `/health` |
+| `predict` endpoint | `api/main.py:predict` | `POST /api/v1/predict` — inference entry point |
+| `admin_reload` endpoint | `api/main.py:admin_reload` | `POST /api/v1/admin/reload` — re-reads pointer, swaps models in memory |
 | Model Pointer Loader | `api/main.py:load_model_pointer` | Reads `current_model.json`; falls back to legacy UUID paths if absent |
-| Backbone | torchvision `efficientnet_v2_s` | Pretrained EfficientNetV2-S, classifier head replaced with `nn.Identity` → 1280-dim features |
+| Backbone | torchvision `efficientnet_v2_s` | Pretrained EfficientNetV2-S, classifier → `nn.Identity`, 1280-dim features |
 | PCA | pickled sklearn | Reduces 1280 → 256 dims |
 | Classifier | pickled sklearn `LogisticRegression` | Predicts class + softmax confidence (below 0.60 flags `requires_manual_review`) |
-| Monitoring Module | `api/monitoring.py` | `append_prediction_log`, `list_pending_reviews`, `submit_review`, `compute_brightness`, `compute_blur_score` |
+| Image-quality metrics | `api/monitoring.py:compute_brightness`, `:compute_blur_score` | Drift-monitoring features computed per request |
+| Prediction Logger | `api/monitoring.py:append_prediction_log` | `INSERT` row into `prediction_logs` (image_bytes, predicted_class, features, etc.) |
 
 ### Airflow Scheduler — Drift DAG (`drift_detection_pipeline`)
 
