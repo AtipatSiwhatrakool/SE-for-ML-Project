@@ -152,3 +152,34 @@ def write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
+
+
+def get_latest_drift_report() -> Dict[str, Any]:
+    ensure_monitoring_dirs()
+    latest_path = REPORTS_DIR / "latest_report.json"
+    if not latest_path.exists():
+        return {
+            "status": "not_available",
+            "drift_detected": False,
+            "message": "No drift report has been generated yet.",
+        }
+
+    with latest_path.open("r", encoding="utf-8") as f:
+        report = json.load(f)
+
+    if "message" not in report:
+        status = str(report.get("status", "unknown"))
+        if status == "ok":
+            report["message"] = "Latest production drift report loaded."
+        elif status == "insufficient_recent_rows":
+            recent = report.get("recent_rows", 0)
+            required = report.get("required_rows", 0)
+            report["message"] = (
+                f"Need at least {required} recent rows for drift detection; only {recent} available."
+            )
+        elif status == "empty_prediction_logs":
+            report["message"] = "Prediction logs are empty, so drift cannot be evaluated yet."
+        else:
+            report["message"] = "Drift report loaded."
+
+    return report

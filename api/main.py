@@ -29,6 +29,7 @@ from api.monitoring import (
     append_prediction_log,
     compute_blur_score,
     compute_brightness,
+    get_latest_drift_report,
     get_review_image,
     list_pending_reviews,
     pil_to_rgb_array,
@@ -250,6 +251,11 @@ async def predict(
 @app.get("/api/v1/review/pending")
 async def review_pending(_user: dict = Depends(require_role("reviewer"))):
     return {"items": list_pending_reviews()}
+
+
+@app.get("/api/v1/monitoring/drift/latest")
+async def monitoring_drift_latest(_user: dict = Depends(require_role("reviewer"))):
+    return get_latest_drift_report()
 
 
 @app.get("/api/v1/review/{request_id}/image")
