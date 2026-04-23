@@ -1,0 +1,168 @@
+@startuml C4 Code Level - ML Training Pipeline
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam classBackgroundColor #F0F0F0
+skinparam arrowColor #333333
+skinparam classBorderColor #333333
+
+title C4 Code Level: ML Training Pipeline\n(airflow_pipeline/dags/train_pipeline.py)
+
+package "train_pipeline.py" {
+
+    package "Configuration" {
+        class CLASS_NAMES {
+            + [str]: beauty_salon, drugstore, restaurant, movie_theater, apartment_building, supermarket
+            + CLASS_NAME_TO_INDEX: Dict[str, int]
+            + MIN_REVIEWED_FOR_RETRAIN: int
+            + MLRUNS_CONTAINER_DIR: Path
+            + MLRUNS_HOST_DIR: Path
+        }
+    }
+
+    package "Feature Extraction (Task 1)" {
+        class extract_features_task {
+            + {static} extract_features_task()
+            --
+            - load BackboneModel (ResNet34, EfficientNetV2-S)
+            - load HF dataset: train_v1, train_v2, test
+            - apply transform: Resize(224), ToTensor, Normalize
+            - extract features via backbone → memmap .npy files
+            - extract reviewed production samples
+        }
+
+        class _load_reviewed_rows {
+            + {static} _load_reviewed_rows(transform, device): (Tensor, ndarray)
+            --
+            - query prediction_logs: WHERE review_status IN ('approved', 'rejected')
+            - MIN_REVIEWED_FOR_RETRAIN gate: return (None, None) if below
+            - decode image_bytes → PIL → transform
+            - map final_class → label via CLASS_NAME_TO_INDEX
+        }
+
+        class _extract_reviewed_features {
+            + {static} _extract_reviewed_features(model, x_tensor, batch_size, use_half): ndarray
+            --
+            - batch inference via backbone.inference_mode()
+            - concatenate batches → float32 numpy array
+        }
+    }
+
+    package "Model Training (Task 2)" {
+        class train_and_log_task {
+            + {static} train_and_log_task()
+            --
+            - load extracted features from .npy files (train_v1, train_v2, test)
+            - 4-way grid: (ResNet34, EfficientNetV2-S) × (train_v1, train_v2)
+            - for each config:
+              * augment with reviewed samples via _augment_with_reviewed
+              * fit PCA(256), then LogisticRegression
+              * compute train/test accuracy, macro-F1
+              * log to MLflow
+            - track best_f1, best_record (ModelInfo)
+            - promote winning model via current_model.json
+        }
+
+        class _augment_with_reviewed {
+            + {static} _augment_with_reviewed(X_train, y_train, data_dir, reviewed_feat_file): (ndarray, ndarray, int)
+            --
+            - load X_reviewed_*.npy and y_reviewed.npy
+            - concatenate to X_train/y_train
+            - return augmented arrays + count
+        }
+
+        class _resolve_pkl_path {
+            + {static} _resolve_pkl_path(model_info): str | None
+            --
+            - extract ModelInfo.model_id (MLflow 3 layout)
+            - query MLflow run for experiment_id
+            - compute HOST-relative path: MLRUNS_HOST_DIR / exp_id / models / model_id / artifacts / model.pkl
+            - fallback to MLflow 2 artifact_uri parsing
+        }
+    }
+
+    package "Baseline Regeneration (Task 3)" {
+        class regenerate_baseline_task {
+            + {static} regenerate_baseline_task()
+            --
+            - delete baseline_reference.json if exists
+            - next drift DAG run will re-bootstrap from post-retrain predictions
+        }
+    }
+
+    package "DAG Orchestration" {
+        class DAG_model_training_pipeline {
+            + schedule: None (trigger-only)
+            + description: Training pipeline comparing ResNet34 and EfficientNetV2-S
+            --
+            + extract_task: PythonOperator(extract_features_task)
+            + train_log_task: PythonOperator(train_and_log_task)
+            + regenerate_baseline: PythonOperator(regenerate_baseline_task)
+            + dependencies: extract_task >> train_log_task >> regenerate_baseline
+        }
+    }
+
+    package "Dependencies" {
+        class PREDICTIONS_DATABASE {
+            + url: postgresql://predictions:predictions@predictions-db:5432/predictions
+            + schema: prediction_logs (image_bytes, final_class, review_status)
+        }
+
+        class MLFLOW_TRACKING {
+            + uri: http://mlflow:5000
+            + experiment: Places365_Classification
+            + artifacts: mlruns/*/models/*/artifacts/model.pkl
+        }
+
+        class HF_DATASET {
+            + source: Punnarunwuwu/seml-industry-ver
+            + splits: train_v1, train_v2, test
+        }
+
+        class PYTORCH_MODELS {
+            + ResNet34: torchvision.models.resnet34(weights=ResNet34_Weights.DEFAULT)
+            + EfficientNetV2-S: torchvision.models.efficientnet_v2_s(weights=EfficientNet_V2_S_Weights.DEFAULT)
+        }
+
+        class SKLEARN_MODELS {
+            + PCA: sklearn.decomposition.PCA(n_components=256)
+            + LogisticRegression: sklearn.linear_model.LogisticRegression(max_iter=2000, n_jobs=-1, C=1.0)
+        }
+    }
+}
+
+' Relationships
+extract_features_task --> _load_reviewed_rows: uses
+extract_features_task --> _extract_reviewed_features: uses
+extract_features_task --> HF_DATASET: loads
+extract_features_task --> PYTORCH_MODELS: backbone
+
+train_and_log_task --> _augment_with_reviewed: uses
+train_and_log_task --> _resolve_pkl_path: uses
+train_and_log_task --> SKLEARN_MODELS: fits
+train_and_log_task --> MLFLOW_TRACKING: logs artifacts, ModelInfo
+train_and_log_task --> PREDICTIONS_DATABASE: writes current_model.json pointer
+
+_load_reviewed_rows --> PREDICTIONS_DATABASE: query reviewed rows
+_augment_with_reviewed --> PREDICTIONS_DATABASE: depends on extracted features
+
+regenerate_baseline_task --> MLFLOW_TRACKING: cleanup (baseline_reference.json)
+
+DAG_model_training_pipeline --> extract_features_task: orchestrates
+DAG_model_training_pipeline --> train_and_log_task: orchestrates
+DAG_model_training_pipeline --> regenerate_baseline_task: orchestrates
+
+note right of train_and_log_task
+    Produces current_model.json at:
+    airflow_pipeline/mlruns/current_model.json
+    with keys: {pca_pkl_path, clf_pkl_path, run_id, winning_config, test_f1, promoted_at}
+
+    This pointer is read by api/main.py:load_model_pointer()
+end note
+
+note bottom of _augment_with_reviewed
+    Gate: MIN_REVIEWED_FOR_RETRAIN (default 10)
+    If fewer than 10 reviewed rows exist,
+    retraining uses only HF data
+end note
+
+@enduml
