@@ -27,6 +27,11 @@
     header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
     header .dot.ok { background: var(--accent-2); }
     header .dot.bad { background: var(--err); }
+    header .right { display: flex; align-items: center; gap: 16px; }
+    header .who { font-size: 12px; color: var(--text); }
+    header .sep { width: 1px; height: 14px; background: var(--border); }
+    header .logout { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0; }
+    header .logout:hover { color: var(--text); }
 
     main { flex: 1; max-width: 960px; width: 100%; margin: 0 auto; padding: 32px; display: grid; gap: 24px; grid-template-columns: 1fr 1fr; }
     @media (max-width: 760px) { main { grid-template-columns: 1fr; padding: 20px; } }
@@ -104,9 +109,14 @@
 <body>
   <header>
     <h1>Industry Classifier</h1>
-    <div class="status">
-      <span id="statusDot" class="dot"></span>
-      <span id="statusText">checking…</span>
+    <div class="right">
+      <div class="status">
+        <span id="statusDot" class="dot"></span>
+        <span id="statusText">checking…</span>
+      </div>
+      <span class="sep"></span>
+      <span id="who" class="who">—</span>
+      <button id="logoutBtn" class="logout">Sign out</button>
     </div>
   </header>
 
@@ -171,6 +181,22 @@
     const reviewBadge = $('reviewBadge');
     const statusDot = $('statusDot');
     const statusText = $('statusText');
+    const whoEl = $('who');
+    const logoutBtn = $('logoutBtn');
+
+    async function loadMe() {
+      try {
+        const r = await fetch('/api/v1/auth/me');
+        if (r.status === 401) { window.location.href = '/login.html'; return; }
+        const d = await r.json();
+        whoEl.textContent = `${d.username} · ${d.role}`;
+      } catch {}
+    }
+    logoutBtn.addEventListener('click', async () => {
+      await fetch('/api/v1/auth/logout', { method: 'POST' });
+      window.location.href = '/login.html';
+    });
+    loadMe();
 
     let currentFile = null;
 
@@ -258,9 +284,10 @@
         const form = new FormData();
         form.append('file', currentFile);
         const r = await fetch('/api/v1/predict', { method: 'POST', body: form });
+        if (r.status === 401) { window.location.href = '/login.html'; return; }
         const body = await r.json();
         if (!r.ok || body.status !== 'success') {
-          throw new Error(body.message || `HTTP ${r.status}`);
+          throw new Error(body.message || body.detail || `HTTP ${r.status}`);
         }
         renderResult(body.data);
       } catch (e) {

@@ -1,0 +1,191 @@
+@startuml C4_Code_ML_Inference
+' C4 Code-level (Level 4) — class + module structure of the inference pipeline
+' Uses standard PlantUML class notation (works with latest PlantUML).
+
+!theme plain
+skinparam classFontSize 12
+skinparam classAttributeIconSize 0
+skinparam roundcorner 10
+skinparam shadowing false
+skinparam classBackgroundColor<<module>>      #D2E5FF
+skinparam classBorderColor<<module>>          #3B6FB6
+skinparam classBackgroundColor<<external>>    #EAEAEA
+skinparam classBorderColor<<external>>        #707070
+skinparam classBackgroundColor<<artifact>>    #FFF0B3
+skinparam classBorderColor<<artifact>>        #B68900
+skinparam classBackgroundColor<<data>>        #D5F5E3
+skinparam classBorderColor<<data>>            #1E8449
+
+title C4 Code Diagram — ML Inference Pipeline\n(api/main.py, api/monitoring.py, api/auth.py)
+
+' ─────────────────────────────────────────────────────────────
+' Internal modules (api/ package)
+' ─────────────────────────────────────────────────────────────
+package "api" {
+
+    class "main.py" as main <<module>> {
+        -- Constants --
+        + MODEL_POINTER_PATH : Path
+        + FALLBACK_PCA_PATH : Path
+        + FALLBACK_CLF_PATH : Path
+        + CLASS_NAMES : dict[int, str]
+        + CONFIDENCE_THRESHOLD : float = 0.60
+        -- Globals (loaded in lifespan) --
+        + backbone : nn.Module
+        + pca      : sklearn.PCA
+        + clf      : LogisticRegression
+        + device   : torch.device
+        + current_model_info : dict
+        -- Functions --
+        + load_model_pointer() : tuple[Path, Path, dict]
+        + load_models() : None
+        + lifespan(app) : AsyncContextManager
+        -- Endpoints --
+        + GET  /health              → health_check()
+        + POST /api/v1/predict      → predict(file, _user)
+        + POST /api/v1/admin/reload → admin_reload(_user)
+        + GET  /api/v1/review/pending
+        + GET  /api/v1/review/{id}/image
+        + POST /api/v1/review/{id}
+        + POST /api/v1/auth/login
+        + POST /api/v1/auth/logout
+        + GET  /api/v1/auth/me
+    }
+
+    class "monitoring.py" as monitor <<module>> {
+        + utc_now_iso() : str
+        + pil_to_rgb_array(image : Image) : np.ndarray
+        + compute_brightness(rgb : np.ndarray) : float
+        + compute_blur_score(rgb : np.ndarray) : float
+        + append_prediction_log(row : dict) : None
+        + list_pending_reviews() : list[dict]
+        + get_review_image(request_id : str) : tuple[bytes, str]?
+        + submit_review(request_id, decision, final_class) : bool
+        + get_latest_drift_report() : dict
+    }
+
+    class "auth.py" as auth <<module>> {
+        + SESSION_SECRET_KEY : str
+        + SESSION_MAX_AGE_SECONDS : int
+        - _fetch_user(username : str) : dict?
+        + authenticate(username, password) : dict?
+        + current_user(request : Request) : dict?
+        + require_role(*roles : str) : Dependency
+        + home_path_for_role(role : str) : str
+    }
+}
+
+' ─────────────────────────────────────────────────────────────
+' External libraries
+' ─────────────────────────────────────────────────────────────
+class "torchvision.efficientnet_v2_s" as tv <<external>> {
+    + classifier : nn.Module  = nn.Identity()
+    + __call__(x : Tensor) : Tensor[N, 1280]
+}
+
+class "sklearn.decomposition.PCA" as sk_pca <<external>> {
+    n_components = 256
+    + transform(X : ndarray) : ndarray
+}
+
+class "sklearn.linear_model.LogisticRegression" as sk_lr <<external>> {
+    + predict(X) : ndarray[int]
+    + predict_proba(X) : ndarray[float]
+}
+
+class "psycopg2" as pg <<external>> {
+    + connect(dsn : str) : Connection
+}
+
+class "bcrypt / pgcrypto" as bc <<external>> {
+    + crypt(pw, salt) : str
+}
+
+class "itsdangerous (Session)" as its <<external>> {
+    + sign(data) : bytes
+    + unsign(data) : bytes
+}
+
+' ─────────────────────────────────────────────────────────────
+' On-disk artifacts + DB
+' ─────────────────────────────────────────────────────────────
+class "airflow_pipeline/mlruns/\ncurrent_model.json" as pointer <<artifact>> {
+    run_id : str
+    pca_pkl_path : str
+    clf_pkl_path : str
+    test_f1 : float
+    winning_config : str
+    promoted_at : str
+}
+
+class "pickled PCA .pkl" as pca_pkl <<artifact>>
+class "pickled LogReg .pkl" as clf_pkl <<artifact>>
+
+class "prediction_logs (Postgres)" as db <<data>> {
+    request_id : UUID  (PK)
+    timestamp : timestamptz
+    filename : text
+    predicted_class : text
+    confidence_score : float
+    requires_manual_review : bool
+    inference_time_ms : float
+    brightness : float
+    blur_score : float
+    width, height : int
+    image_bytes : bytea
+    image_mime : text
+    review_status : text
+    final_class : text
+    reviewed_at : timestamptz
+}
+
+class "users (Postgres)" as users <<data>> {
+    id : serial (PK)
+    username : text (UQ)
+    password_hash : text
+    role : text   (user | reviewer)
+}
+
+' ─────────────────────────────────────────────────────────────
+' Relationships — inference path
+' ─────────────────────────────────────────────────────────────
+main  ..>  auth   : "Depends(require_role(...))"
+main  ..>  monitor : "compute_brightness / compute_blur_score\nappend_prediction_log"
+main  ..>  tv     : "backbone(img_tensor)  →  features"
+main  ..>  sk_pca : "pca.transform(features)"
+main  ..>  sk_lr  : "clf.predict / clf.predict_proba"
+
+main  ..>  pointer : "load_model_pointer() reads"
+pointer ..> pca_pkl : "pca_pkl_path"
+pointer ..> clf_pkl : "clf_pkl_path"
+main  ..>  pca_pkl  : "pickle.load → pca"
+main  ..>  clf_pkl  : "pickle.load → clf"
+
+' ─────────────────────────────────────────────────────────────
+' Relationships — persistence / auth
+' ─────────────────────────────────────────────────────────────
+monitor ..> pg  : "psycopg2.connect"
+monitor ..> db  : "INSERT / SELECT / UPDATE"
+auth    ..> pg  : "psycopg2.connect"
+auth    ..> users : "SELECT username, verify bcrypt"
+auth    ..> bc    : "crypt() password check"
+main    ..> its   : "SessionMiddleware\n(signed cookie)"
+
+' ─────────────────────────────────────────────────────────────
+' Note: the /predict call flow
+' ─────────────────────────────────────────────────────────────
+note right of main
+  **predict() flow**
+  1. require_role("user")  →  auth.current_user
+  2. Read bytes, PIL.Image.open → RGB
+  3. pil_to_rgb_array →
+     compute_brightness, compute_blur_score
+  4. transform(image) → backbone → features (1280)
+  5. pca.transform → 256 dims
+  6. clf.predict / predict_proba → class, confidence
+  7. requires_manual_review = confidence < 0.60
+  8. append_prediction_log(row) → Postgres
+  9. return JSON to client
+end note
+
+@enduml

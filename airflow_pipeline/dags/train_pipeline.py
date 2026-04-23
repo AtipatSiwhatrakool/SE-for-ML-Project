@@ -5,6 +5,109 @@ from airflow.operators.python import PythonOperator
 import logging
 
 
+# Kept in sync with api/main.py:CLASS_NAMES and drift_detection_pipeline.py:CLASS_NAMES.
+CLASS_NAMES = [
+    "beauty_salon",
+    "drugstore",
+    "restaurant",
+    "movie_theater",
+    "apartment_building",
+    "supermarket",
+]
+CLASS_NAME_TO_INDEX = {name: idx for idx, name in enumerate(CLASS_NAMES)}
+
+MIN_REVIEWED_FOR_RETRAIN = int(os.getenv("MIN_REVIEWED_FOR_RETRAIN", "10"))
+
+PREDICTIONS_DATABASE_URL = os.getenv(
+    "PREDICTIONS_DATABASE_URL",
+    "postgresql://predictions:predictions@predictions-db:5432/predictions",
+)
+
+# Container path. Mounted from ./mlruns on host (docker-compose.yml).
+MLRUNS_CONTAINER_DIR = "/opt/airflow/mlruns"
+# Host-relative path the API resolves from repo root.
+MLRUNS_HOST_DIR = "airflow_pipeline/mlruns"
+CURRENT_MODEL_CONTAINER_PATH = os.path.join(MLRUNS_CONTAINER_DIR, "current_model.json")
+
+DRIFT_BASELINE_PATH = "/opt/airflow/data/drift/baseline_reference.json"
+
+
+# ─────────────────────────────────────────────
+# Helper — pull reviewed images from Postgres
+# ─────────────────────────────────────────────
+def _load_reviewed_rows(transform, device):
+    """Return (images_tensor, labels_array) for all reviewed prediction_logs rows.
+
+    Returns (None, None) if below MIN_REVIEWED_FOR_RETRAIN.
+    """
+    import io
+    import numpy as np
+    import psycopg2
+    import torch
+    from PIL import Image
+
+    with psycopg2.connect(PREDICTIONS_DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT image_bytes, final_class
+            FROM prediction_logs
+            WHERE review_status IN ('approved', 'rejected')
+              AND final_class IS NOT NULL
+            """
+        )
+        rows = cur.fetchall()
+
+    logging.info(f"Fetched {len(rows)} reviewed rows from predictions-db")
+
+    if len(rows) < MIN_REVIEWED_FOR_RETRAIN:
+        logging.warning(
+            f"Only {len(rows)} reviewed rows (< {MIN_REVIEWED_FOR_RETRAIN}); "
+            "skipping production-data augmentation."
+        )
+        return None, None
+
+    tensors, labels = [], []
+    skipped = 0
+    for image_bytes, final_class in rows:
+        if final_class not in CLASS_NAME_TO_INDEX:
+            skipped += 1
+            continue
+        try:
+            img = Image.open(io.BytesIO(bytes(image_bytes))).convert("RGB")
+            tensors.append(transform(img))
+            labels.append(CLASS_NAME_TO_INDEX[final_class])
+        except Exception as e:
+            logging.warning(f"Skipping unreadable reviewed row: {e}")
+            skipped += 1
+
+    if skipped:
+        logging.warning(f"Skipped {skipped} reviewed rows (unknown class or decode error)")
+
+    if not tensors:
+        return None, None
+
+    x = torch.stack(tensors).to(device)
+    y = np.array(labels, dtype=np.int64)
+    logging.info(f"Prepared {len(tensors)} reviewed samples for feature extraction")
+    return x, y
+
+
+def _extract_reviewed_features(model, x_tensor, batch_size=64, use_half=False):
+    """Run reviewed images through a backbone; return numpy float32 features."""
+    import numpy as np
+    import torch
+
+    with torch.inference_mode():
+        out_chunks = []
+        for i in range(0, len(x_tensor), batch_size):
+            chunk = x_tensor[i : i + batch_size]
+            if use_half:
+                chunk = chunk.half()
+            feat = model(chunk).float().cpu().numpy()
+            out_chunks.append(feat)
+    return np.concatenate(out_chunks, axis=0) if out_chunks else np.empty((0, 0), dtype=np.float32)
+
+
 # ─────────────────────────────────────────────
 # TASK 1 — Feature Extraction
 # ─────────────────────────────────────────────
@@ -20,56 +123,41 @@ def extract_features_task():
         efficientnet_v2_s, EfficientNet_V2_S_Weights,
         resnet34, ResNet34_Weights,
     )
-    from datasets import load_dataset, concatenate_datasets
+    from datasets import load_dataset
 
     # ── Reproducibility ──────────────────────
     random.seed(42)
     np.random.seed(42)
     torch.manual_seed(42)
 
-    # ── Thread budget — harness huge RAM and CPU cores ──
     torch.set_num_threads(16)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # Quadro P4000 (SM 6.1) lacks hardware FP16 cores, so we must strictly use FP32.
     use_half = False
     logging.info(f"Device: {device} | half-precision: {use_half}")
 
-    # ── Authenticated fast HF download ───────
-    # os.environ["HF_TOKEN"] = ""
-
-    # hf_transfer: Rust-based downloader, up to 5× faster.
-    # Requires: pip install hf_transfer  (safe no-op if not installed)
     os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
-    # TOKENIZERS_PARALLELISM=false + DATASETS_VERBOSITY=debug help avoid
-    # deadlocks caused by forked processes inside the Airflow worker.
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    # Disable the datasets progress bar — it can block in non-TTY envs
-    # os.environ["HF_DATASETS_DISABLE_PROGRESS_BARS"] = "1"
 
     data_dir = "/opt/airflow/data"
     os.makedirs(data_dir, exist_ok=True)
 
-    # ── Load dataset ─────────────────────────
-    # IMPORTANT: num_proc is intentionally omitted here.
-    # Inside an Airflow worker (which is itself a forked process),
-    # spawning child processes via num_proc causes a deadlock / hang
-    # because the multiprocessing start method defaults to "fork" and
-    # the HF datasets library uses semaphores that don't survive a fork.
-    # Single-process download is slower per-shard but never hangs.
     import datasets
     datasets.utils.logging.set_verbosity_info()
     datasets.utils.logging.enable_progress_bar()
-    
+
     logging.info("Loading dataset from Hugging Face (this may take 2-5 min)...")
     dataset = load_dataset("Punnarunwuwu/seml-industry-ver")
     logging.info("Dataset loaded. Separating splits...")
     train_v1_dataset = dataset["train_v1"]
     train_v2_dataset = dataset["train_v2"]
     test_dataset  = dataset["test"]
-    logging.info(f"Train_v1 size: {len(train_v1_dataset)} | Train_v2 size: {len(train_v2_dataset)} | Test size: {len(test_dataset)}")
+    logging.info(
+        f"Train_v1 size: {len(train_v1_dataset)} | "
+        f"Train_v2 size: {len(train_v2_dataset)} | "
+        f"Test size: {len(test_dataset)}"
+    )
 
-    # ── Transforms ───────────────────────────
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
@@ -96,11 +184,6 @@ def extract_features_task():
         labels       = torch.tensor([item["label"]        for item in batch])
         return pixel_values, labels
 
-    # num_workers=0 — mandatory inside Airflow.
-    # Airflow workers are themselves forked processes; spawning further
-    # child workers causes deadlocks with PyTorch's multiprocessing.
-    # The GPU keeps utilisation high enough that the single-process
-    # loader is not the bottleneck here — inference dominates.
     LOADER_KWARGS = dict(
         batch_size=512,
         shuffle=False,
@@ -112,15 +195,14 @@ def extract_features_task():
     train_v2_loader = DataLoader(train_v2_dataset, **LOADER_KWARGS)
     test_loader  = DataLoader(test_dataset,  **LOADER_KWARGS)
 
-    # ── Shared extraction helper ──────────────
+    # Reviewed production data (same transform as HF dataset above).
+    reviewed_x, reviewed_y = _load_reviewed_rows(transform, device)
+
     @torch.inference_mode()
     def extract_and_save(loader, split_name: str, model: nn.Module,
                          out_path: str):
-        """Extract features into a pre-allocated memmap to avoid holding
-        the entire array in RAM at once."""
         total_batches = len(loader)
 
-        # First pass: figure out feature dim from one batch
         sample_x, _ = next(iter(loader))
         sample_x = sample_x[:1].to(device)
         if use_half:
@@ -131,7 +213,6 @@ def extract_features_task():
         del sample_out
 
         n_samples = len(loader.dataset)
-        # memmap writes directly to disk — never loads the full array
         mmap = np.lib.format.open_memmap(
             out_path, mode="w+", dtype=np.float32,
             shape=(n_samples, feat_dim),
@@ -146,12 +227,11 @@ def extract_features_task():
             if use_half:
                 x = x.half()
 
-            out = model(x).float().cpu().numpy()   # back to float32 for saving
+            out = model(x).float().cpu().numpy()
             bsz = out.shape[0]
             mmap[idx: idx + bsz] = out
             idx += bsz
 
-            # Explicit per-batch cleanup — keeps peak RAM flat
             del x, out
 
         mmap.flush()
@@ -177,12 +257,24 @@ def extract_features_task():
     extract_and_save(test_loader,  "TEST/ResNet34",  backbone,
                      os.path.join(data_dir, "X_test_resnet.npy"))
 
+    # Reviewed features via same ResNet34 backbone
+    if reviewed_x is not None:
+        reviewed_feats = _extract_reviewed_features(backbone, reviewed_x, use_half=use_half)
+        np.save(os.path.join(data_dir, "X_reviewed_resnet.npy"), reviewed_feats)
+        np.save(os.path.join(data_dir, "y_reviewed.npy"), reviewed_y)
+        logging.info(f"Saved reviewed ResNet34 features: {reviewed_feats.shape}")
+    else:
+        # Clear any stale reviewed features from earlier runs
+        for stale in ("X_reviewed_resnet.npy", "X_reviewed_effnet.npy", "y_reviewed.npy"):
+            p = os.path.join(data_dir, stale)
+            if os.path.exists(p):
+                os.remove(p)
+
     del backbone
     gc.collect()
     torch.cuda.empty_cache()
 
-    # ── Save labels (only need to do this once, from ResNet pass) ──
-    # Re-collect labels in a single pass without model inference
+    # ── Save labels ──
     logging.info("Saving labels...")
     y_train_v1_list, y_train_v2_list, y_test_list = [], [], []
     for _, y in train_v1_loader:
@@ -216,6 +308,11 @@ def extract_features_task():
     extract_and_save(test_loader,  "TEST/EffNetV2-S",  backbone,
                      os.path.join(data_dir, "X_test_effnet.npy"))
 
+    if reviewed_x is not None:
+        reviewed_feats = _extract_reviewed_features(backbone, reviewed_x, use_half=use_half)
+        np.save(os.path.join(data_dir, "X_reviewed_effnet.npy"), reviewed_feats)
+        logging.info(f"Saved reviewed EfficientNetV2-S features: {reviewed_feats.shape}")
+
     del backbone
     gc.collect()
     torch.cuda.empty_cache()
@@ -226,6 +323,57 @@ def extract_features_task():
 # ─────────────────────────────────────────────
 # TASK 2 — Train & Log
 # ─────────────────────────────────────────────
+def _augment_with_reviewed(X_train, y_train, data_dir, reviewed_feat_file):
+    """Concatenate reviewed features + labels to the HF-derived arrays."""
+    import numpy as np
+
+    reviewed_feat_path = os.path.join(data_dir, reviewed_feat_file)
+    reviewed_y_path = os.path.join(data_dir, "y_reviewed.npy")
+
+    if not (os.path.exists(reviewed_feat_path) and os.path.exists(reviewed_y_path)):
+        return X_train, y_train, 0
+
+    reviewed_X = np.load(reviewed_feat_path)
+    reviewed_y = np.load(reviewed_y_path)
+
+    if reviewed_X.shape[0] == 0:
+        return X_train, y_train, 0
+
+    combined_X = np.concatenate([X_train, reviewed_X], axis=0)
+    combined_y = np.concatenate([y_train, reviewed_y], axis=0)
+    return combined_X, combined_y, int(reviewed_X.shape[0])
+
+
+def _resolve_pkl_path(model_info) -> str | None:
+    """Return a HOST-relative path to the pickled model for current_model.json."""
+    import mlflow
+
+    # MLflow 3: ModelInfo has `.model_id` = 'm-<uuid>'. Layout is
+    #   {artifact_root}/{experiment_id}/models/{model_id}/artifacts/model.pkl
+    model_id = getattr(model_info, "model_id", None)
+    exp_id = None
+    try:
+        run = mlflow.get_run(model_info.run_id)
+        exp_id = run.info.experiment_id
+    except Exception:
+        pass
+
+    if model_id and exp_id:
+        return f"{MLRUNS_HOST_DIR}/{exp_id}/models/{model_id}/artifacts/model.pkl"
+
+    # Fallback: derive from artifact_uri (MLflow 2 legacy layout).
+    try:
+        artifact_uri = model_info.artifact_uri  # e.g. file:///.../mlruns/1/<run>/artifacts/pca_model
+        if artifact_uri and "/opt/airflow/mlruns/" in artifact_uri:
+            container_path = artifact_uri.split("file://")[-1]
+            host_relative = container_path.replace("/opt/airflow/mlruns", MLRUNS_HOST_DIR, 1)
+            return f"{host_relative}/model.pkl"
+    except Exception:
+        pass
+
+    return None
+
+
 def train_and_log_task():
     import subprocess
     import sys
@@ -237,6 +385,7 @@ def train_and_log_task():
         import matplotlib.pyplot as plt
         import seaborn as sns
 
+    import json
     import numpy as np
     import mlflow
     import mlflow.sklearn
@@ -255,23 +404,26 @@ def train_and_log_task():
     mlflow.set_experiment("Places365_Classification")
 
     models_to_train = [
-        {"name": "ResNet34", "ds_name": "train_v1", "train_file": "X_train_v1_resnet.npy", "test_file": "X_test_resnet.npy", "y_train": y_train_v1},
-        {"name": "ResNet34", "ds_name": "train_v2", "train_file": "X_train_v2_resnet.npy", "test_file": "X_test_resnet.npy", "y_train": y_train_v2},
-        {"name": "EfficientNetV2-S", "ds_name": "train_v1", "train_file": "X_train_v1_effnet.npy", "test_file": "X_test_effnet.npy", "y_train": y_train_v1},
-        {"name": "EfficientNetV2-S", "ds_name": "train_v2", "train_file": "X_train_v2_effnet.npy", "test_file": "X_test_effnet.npy", "y_train": y_train_v2},
+        {"name": "ResNet34",         "ds_name": "train_v1", "train_file": "X_train_v1_resnet.npy", "test_file": "X_test_resnet.npy", "reviewed_feat_file": "X_reviewed_resnet.npy", "y_train": y_train_v1},
+        {"name": "ResNet34",         "ds_name": "train_v2", "train_file": "X_train_v2_resnet.npy", "test_file": "X_test_resnet.npy", "reviewed_feat_file": "X_reviewed_resnet.npy", "y_train": y_train_v2},
+        {"name": "EfficientNetV2-S", "ds_name": "train_v1", "train_file": "X_train_v1_effnet.npy", "test_file": "X_test_effnet.npy", "reviewed_feat_file": "X_reviewed_effnet.npy", "y_train": y_train_v1},
+        {"name": "EfficientNetV2-S", "ds_name": "train_v2", "train_file": "X_train_v2_effnet.npy", "test_file": "X_test_effnet.npy", "reviewed_feat_file": "X_reviewed_effnet.npy", "y_train": y_train_v2},
     ]
 
     best_f1 = 0.0
-    best_config_name = ""
+    best_record = None  # winning config's pca + clf ModelInfo
     run_results = []
 
     for cfg in models_to_train:
-        # Huge RAM is available, load arrays fully into memory instead of streaming disk
         X_train = np.load(os.path.join(data_dir, cfg["train_file"]))
         X_test  = np.load(os.path.join(data_dir, cfg["test_file"]))
         y_train = cfg["y_train"]
 
-        with mlflow.start_run(run_name=f"PCA256_LogReg_{cfg['name']}_{cfg['ds_name']}"):
+        X_train, y_train, reviewed_added = _augment_with_reviewed(
+            X_train, y_train, data_dir, cfg["reviewed_feat_file"],
+        )
+
+        with mlflow.start_run(run_name=f"PCA256_LogReg_{cfg['name']}_{cfg['ds_name']}") as run:
             components = 256
             mlflow.log_params({
                 "pca_components": components,
@@ -279,6 +431,7 @@ def train_and_log_task():
                 "backbone":       cfg["name"],
                 "dataset_split":  cfg["ds_name"],
                 "dataset":        "Punnarunwuwu/seml-industry-ver",
+                "reviewed_samples_added": reviewed_added,
             })
 
             pca = PCA(n_components=components, random_state=42)
@@ -298,7 +451,8 @@ def train_and_log_task():
             test_f1   = f1_score(y_test,  test_preds,  average="macro")
 
             logging.info(
-                f"[{cfg['name']} | {cfg['ds_name']}] TRAIN acc={train_acc:.4f} f1={train_f1:.4f}"
+                f"[{cfg['name']} | {cfg['ds_name']}] TRAIN acc={train_acc:.4f} f1={train_f1:.4f} "
+                f"(+{reviewed_added} reviewed samples)"
             )
             logging.info(
                 f"[{cfg['name']} | {cfg['ds_name']}] TEST  acc={test_acc:.4f}  f1={test_f1:.4f}"
@@ -310,20 +464,53 @@ def train_and_log_task():
                 "test_accuracy":  test_acc,
                 "test_f1":        float(test_f1),
             })
-            mlflow.sklearn.log_model(pca, "pca_model")
-            mlflow.sklearn.log_model(clf, "logistic_regression_model")
+            pca_info = mlflow.sklearn.log_model(pca, "pca_model")
+            clf_info = mlflow.sklearn.log_model(clf, "logistic_regression_model")
 
             if test_f1 > best_f1:
                 best_f1 = test_f1
-                best_config_name = f"{cfg['name']} trained on {cfg['ds_name']}"
+                best_record = {
+                    "pca_info": pca_info,
+                    "clf_info": clf_info,
+                    "run_id": run.info.run_id,
+                    "config_name": f"{cfg['name']} / {cfg['ds_name']}",
+                    "test_f1": float(test_f1),
+                }
 
             run_results.append({
                 "name": f"{cfg['name']}\n({cfg['ds_name']})",
                 "f1": test_f1
             })
 
+    if best_record is None:
+        logging.error("No successful training runs — skipping model promotion.")
+    else:
+        pca_pkl_path = _resolve_pkl_path(best_record["pca_info"])
+        clf_pkl_path = _resolve_pkl_path(best_record["clf_info"])
+        if pca_pkl_path and clf_pkl_path:
+            pointer = {
+                "pca_run_id": best_record["run_id"],
+                "clf_run_id": best_record["run_id"],
+                "pca_pkl_path": pca_pkl_path,
+                "clf_pkl_path": clf_pkl_path,
+                "winning_config": best_record["config_name"],
+                "test_f1": best_record["test_f1"],
+                "promoted_at": datetime.now().isoformat() + "Z",
+            }
+            os.makedirs(os.path.dirname(CURRENT_MODEL_CONTAINER_PATH), exist_ok=True)
+            with open(CURRENT_MODEL_CONTAINER_PATH, "w", encoding="utf-8") as f:
+                json.dump(pointer, f, indent=2, ensure_ascii=False)
+            logging.info(
+                f"Promoted {best_record['config_name']} (F1={best_f1:.4f}) → {CURRENT_MODEL_CONTAINER_PATH}"
+            )
+        else:
+            logging.error(
+                "Could not resolve artifact paths from ModelInfo; skipping promotion. "
+                f"pca_info={best_record['pca_info']}, clf_info={best_record['clf_info']}"
+            )
+
     logging.info(
-        f"Training complete. Best: {best_config_name} — F1={best_f1:.4f}"
+        f"Training complete. Best: {best_record['config_name'] if best_record else 'n/a'} — F1={best_f1:.4f}"
     )
 
     try:
@@ -334,19 +521,30 @@ def train_and_log_task():
         plt.title("Model F1 Score Comparison Across Datasets")
         plt.ylabel("Test F1 Score")
         plt.ylim(0, 1.0)
-        
-        # Determine data_dir if it's not strictly absolute path globally
-        out_path = os.path.join(data_dir, "f1_comparison_chart.png") if 'data_dir' in locals() else "/tmp/f1_comparison_chart.png"
+
+        out_path = os.path.join(data_dir, "f1_comparison_chart.png")
         plt.savefig(out_path, bbox_inches="tight")
         plt.close()
 
         with mlflow.start_run(run_name="Visualization_Report"):
             mlflow.log_artifact(out_path)
-            mlflow.log_param("winning_model", best_config_name.replace('\n', ' '))
+            if best_record:
+                mlflow.log_param("winning_model", best_record["config_name"])
             mlflow.log_metric("winning_f1", best_f1)
-            
+
     except Exception as e:
         logging.error(f"Failed to generate MLflow visualization: {e}")
+
+
+# ─────────────────────────────────────────────
+# TASK 3 — Regenerate drift baseline
+# ─────────────────────────────────────────────
+def regenerate_baseline_task():
+    if os.path.exists(DRIFT_BASELINE_PATH):
+        os.remove(DRIFT_BASELINE_PATH)
+        logging.info(f"Deleted {DRIFT_BASELINE_PATH}; drift DAG will re-bootstrap.")
+    else:
+        logging.info(f"No baseline file at {DRIFT_BASELINE_PATH}; nothing to regenerate.")
 
 
 # ─────────────────────────────────────────────
@@ -377,5 +575,9 @@ with DAG(
         task_id="train_and_evaluate_models",
         python_callable=train_and_log_task,
     )
+    regenerate_baseline = PythonOperator(
+        task_id="regenerate_baseline",
+        python_callable=regenerate_baseline_task,
+    )
 
-    extract_task >> train_log_task
+    extract_task >> train_log_task >> regenerate_baseline

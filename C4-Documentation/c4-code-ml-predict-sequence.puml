@@ -1,0 +1,75 @@
+@startuml C4_Code_Predict_Sequence
+' Code-level sequence view — what happens for a single POST /api/v1/predict call.
+' Complementary to c4-code-ml-inference.puml (which shows static structure).
+
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam shadowing false
+skinparam ParticipantBackgroundColor #D2E5FF
+skinparam ParticipantBorderColor #3B6FB6
+skinparam ActorBackgroundColor #FAD4A6
+skinparam DatabaseBackgroundColor #D5F5E3
+skinparam DatabaseBorderColor #1E8449
+
+title POST /api/v1/predict — Code-Level Sequence
+
+actor "User\n(role=user)" as user
+participant "FastAPI route\nmain.predict()" as route
+participant "auth.py\nrequire_role('user')" as auth
+participant "monitoring.py\n(image metrics)" as metrics
+participant "torchvision\nEfficientNetV2-S" as bb
+participant "sklearn PCA\n(pickled)" as pca
+participant "sklearn LogReg\n(pickled)" as clf
+participant "monitoring.py\nappend_prediction_log" as log
+database "prediction_logs\n(Postgres)" as db
+
+user -> route : POST multipart\nfile=storefront.jpg
+activate route
+
+route -> auth : Depends(require_role("user"))
+activate auth
+auth -> auth : current_user(request)\nverify signed cookie
+return user dict
+deactivate auth
+
+route -> route : validate extension\n(.jpg | .png)
+route -> route : raw_bytes = await file.read()
+route -> route : Image.open(...).convert("RGB")
+
+route -> metrics : pil_to_rgb_array(image)
+route -> metrics : compute_brightness(rgb)
+route -> metrics : compute_blur_score(rgb)
+metrics --> route : brightness, blur_score
+
+route -> route : transform(image).unsqueeze(0)\n→ (1, 3, 224, 224)
+
+route -> bb : backbone(img_tensor.to(device))
+activate bb
+return features (1, 1280)
+deactivate bb
+
+route -> pca : pca.transform(features)
+activate pca
+return features_pca (1, 256)
+deactivate pca
+
+route -> clf : clf.predict(features_pca)
+activate clf
+return pred (int)
+clf -> clf : predict_proba
+clf --> route : proba (6 floats)
+deactivate clf
+
+route -> route : confidence = proba[pred]\nrequires_manual_review = confidence < 0.60
+
+route -> log : append_prediction_log({\n  request_id, timestamp,\n  predicted_class, confidence,\n  brightness, blur_score,\n  image_bytes, image_mime, ...\n})
+activate log
+log -> db : INSERT INTO prediction_logs
+db --> log : OK
+return
+deactivate log
+
+route --> user : 200 OK\n{predicted_industry, confidence_score,\n requires_manual_review, inference_time_ms}
+deactivate route
+
+@enduml

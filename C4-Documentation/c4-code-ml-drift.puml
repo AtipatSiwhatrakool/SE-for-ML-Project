@@ -1,0 +1,281 @@
+@startuml C4 Code Level - ML Drift Detection Pipeline
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam classBackgroundColor #F0F0F0
+skinparam arrowColor #333333
+skinparam classBorderColor #333333
+
+title C4 Code Level: ML Drift Detection Pipeline\n(airflow_pipeline/dags/drift_detection_pipeline.py)
+
+package "drift_detection_pipeline.py" {
+
+    package "Configuration & Constants" {
+        class DriftConfig {
+            + CLASS_NAMES: [str] × 6 (beauty_salon, drugstore, restaurant, movie_theater, apartment_building, supermarket)
+            + DRIFT_THRESHOLD: float = 0.25
+            + WINDOW_DAYS: int = 7
+            + MIN_ROWS_FOR_DRIFT: int = 20
+            + REJECTION_RATE_THRESHOLD: float = 0.30
+            + MIN_REVIEWED_IN_WINDOW: int = 10
+            + RETRAIN_COOLDOWN_DAYS: int = 7
+            + DRIFT_PERSISTENCE_WINDOW: int = 5
+            + DRIFT_PERSISTENCE_K: int = 3
+        }
+
+        class DriftPaths {
+            + DRIFT_DIR: Path = /opt/airflow/data/drift
+            + BASELINE_JSON: Path = DRIFT_DIR / baseline_reference.json
+            + REPORTS_DIR: Path = DRIFT_DIR / reports
+        }
+
+        class DatabaseUrl {
+            + PREDICTIONS_DATABASE_URL: str = postgresql://predictions:predictions@predictions-db:5432/predictions
+        }
+    }
+
+    package "Baseline Management (Task 1)" {
+        class bootstrap_baseline_task {
+            + bootstrap_baseline_task(**context): Dict[str, Any]
+            --
+            - check if baseline_reference.json exists
+            - if not exists:
+              * if df is empty: return uniform distribution
+              * else: bootstrap from earliest 500 prediction_logs rows
+            - write class_distribution + quality_reference (brightness, blur_score)
+            - returns {status: 'created'|'exists', path: str}
+        }
+
+        class _ensure_dirs {
+            + {static} _ensure_dirs()
+            --
+            - mkdir DRIFT_DIR, REPORTS_DIR
+        }
+    }
+
+    package "Data Read/Prepare" {
+        class _read_logs {
+            + {static} _read_logs(): pd.DataFrame
+            --
+            - SQL: SELECT from prediction_logs ORDER BY timestamp ASC
+            - parse timestamp (UTC), dropna (timestamp, predicted_class, brightness, blur_score)
+        }
+
+        class _uniform_class_distribution {
+            + {static} _uniform_class_distribution(): Dict[str, float]
+            --
+            - return {class: 1/6 for all 6 classes}
+        }
+
+        class _normalize_distribution {
+            + {static} _normalize_distribution(counts: Dict, categories: List): Dict[str, float]
+            --
+            - normalize class counts to probabilities
+            - fallback to uniform if total ≤ 0
+        }
+    }
+
+    package "Stability Index (PSI/CSI) Computation" {
+        class _stability_index {
+            + {static} _stability_index(expected: ndarray, actual: ndarray, eps: float = 1e-6): float
+            --
+            - compute sum((actual - expected) * log(actual / expected))
+            - clip values to [eps, ∞) to avoid log(0)
+        }
+
+        class _psi_from_class_distributions {
+            + {static} _psi_from_class_distributions(expected_dist: Dict, actual_dist: Dict): float
+            --
+            - extract probabilities from both dicts in CLASS_NAMES order
+            - call _stability_index(expected, actual)
+        }
+
+        class _compute_bin_edges {
+            + {static} _compute_bin_edges(reference_values: ndarray, n_bins: int = 10): ndarray
+            --
+            - compute percentile quantiles [0, 100] in n_bins+1 steps
+            - return unique edges with padding [v-1e-6, v+1e-6]
+        }
+
+        class _distribution_from_edges {
+            + {static} _distribution_from_edges(values: ndarray, edges: ndarray): ndarray
+            --
+            - histogram(values, bins=edges)
+            - normalize to probabilities
+            - fallback to uniform if total ≤ 0
+        }
+
+        class _csi_from_samples {
+            + {static} _csi_from_samples(expected_values: List[float], actual_values: List[float]): float
+            --
+            - compute bin edges from expected_values
+            - compute distributions for both expected and actual
+            - call _stability_index on distributions
+            - used for brightness and blur_score
+        }
+    }
+
+    package "Rejection Rate Computation" {
+        class _compute_rejection_rate {
+            + {static} _compute_rejection_rate(window_start: datetime, window_end: datetime): (float, int)
+            --
+            - SQL COUNT FILTER: reviewed = COUNT(*) WHERE review_status IN ('approved', 'rejected')
+            - SQL COUNT FILTER: rejected = COUNT(*) WHERE review_status = 'rejected'
+            - return (rejected / reviewed, reviewed_count)
+            - gate: if reviewed == 0, return (0.0, 0)
+        }
+    }
+
+    package "Drift Report Generation (Task 2)" {
+        class compute_drift_task {
+            + compute_drift_task(**context): Dict[str, Any]
+            --
+            - load baseline_reference.json
+            - read_logs() → df
+            - compute window [now - WINDOW_DAYS, now)
+            - check MIN_ROWS_FOR_DRIFT gate
+            - compute 4 signals:
+              * PSI over predicted-class distribution
+              * CSI over brightness
+              * CSI over blur_score
+              * rejection_rate (if reviewed_in_window ≥ MIN_REVIEWED_IN_WINDOW)
+            - drift_detected = any signal > DRIFT_THRESHOLD
+            - save report to latest_report.json and timestamped file
+        }
+
+        class DriftReport {
+            + generated_at: str (ISO)
+            + window_start: str (ISO)
+            + window_end: str (ISO)
+            + status: str (ok | empty_prediction_logs | insufficient_recent_rows)
+            + threshold: float
+            + recent_rows: int
+            + baseline_mode: str
+            + psi: float
+            + csi_brightness: float
+            + csi_blur_score: float
+            + rejection_rate: float (0.0 if no reviews)
+            + reviewed_in_window: int
+            + drift_detected: bool
+            + reasons: List[str] (subset of {psi, csi_brightness, csi_blur_score, rejection_rate})
+            + current_class_distribution: Dict[str, float]
+            + expected_class_distribution: Dict[str, float]
+        }
+    }
+
+    package "Retrain Decision (Task 3 - Branching)" {
+        class branch_on_drift {
+            + branch_on_drift(**context): str
+            --
+            - pull compute_drift_report xcom → report
+            - if NOT report.drift_detected:
+              * return "skip_model_retraining"
+            - check PERSISTENCE gate:
+              * read last DRIFT_PERSISTENCE_WINDOW timestamped reports
+              * count how many have drift_detected = True
+              * if persisted_count < DRIFT_PERSISTENCE_K: return "skip_model_retraining"
+            - check COOLDOWN gate:
+              * query Airflow DagRun.find(dag_id="model_training_pipeline")
+              * if any run start_date ≥ (now - RETRAIN_COOLDOWN_DAYS): return "skip_model_retraining"
+            - else: return "trigger_model_retraining"
+        }
+
+        class PersistenceGate {
+            + reads: last DRIFT_PERSISTENCE_WINDOW timestamped reports
+            + threshold: DRIFT_PERSISTENCE_K of last DRIFT_PERSISTENCE_WINDOW
+            + default: 3 of last 5 must have drift_detected=True
+        }
+
+        class CooldownGate {
+            + checks: Airflow DagRun metadata for model_training_pipeline
+            + threshold: RETRAIN_COOLDOWN_DAYS (default 7 days)
+            + prevents: rapid cascades of retrains
+        }
+    }
+
+    package "DAG Orchestration" {
+        class DAG_drift_detection_pipeline {
+            + dag_id: drift_detection_pipeline
+            + schedule: @daily
+            + description: Detect production data drift using PSI/CSI
+            + catchup: False
+            --
+            + bootstrap_baseline: PythonOperator(bootstrap_baseline_task)
+            + compute_drift_report: PythonOperator(compute_drift_task)
+            + decide_retraining: BranchPythonOperator(branch_on_drift)
+            + trigger_model_retraining: TriggerDagRunOperator → model_training_pipeline
+            + skip_model_retraining: EmptyOperator
+            + done: EmptyOperator(trigger_rule=none_failed_min_one_success)
+            --
+            + flow: bootstrap_baseline >> compute_drift_report >> decide_retraining
+            +       decide_retraining >> {trigger_model_retraining | skip_model_retraining} >> done
+        }
+    }
+
+    package "Dependencies" {
+        class PREDICTIONS_DATABASE {
+            + url: postgresql://predictions:predictions@predictions-db:5432/predictions
+            + schema: prediction_logs (prediction_logs, review_status, final_class, brightness, blur_score)
+        }
+
+        class DRIFT_STORAGE {
+            + file system: /opt/airflow/data/drift (Docker bind-mount)
+            + baseline_reference.json: reference class distribution and quality metrics
+            + reports/: timestamped drift_report_*.json + latest_report.json
+        }
+
+        class AIRFLOW_METADATA {
+            + DagRun.find(): query training DAG run history for cooldown
+        }
+    }
+}
+
+' Relationships
+bootstrap_baseline_task --> _ensure_dirs: uses
+bootstrap_baseline_task --> _read_logs: uses
+bootstrap_baseline_task --> _normalize_distribution: uses
+bootstrap_baseline_task --> DRIFT_STORAGE: writes baseline_reference.json
+
+compute_drift_task --> _read_logs: uses
+compute_drift_task --> _normalize_distribution: uses
+compute_drift_task --> _psi_from_class_distributions: computes
+compute_drift_task --> _csi_from_samples: computes (brightness, blur_score)
+compute_drift_task --> _compute_rejection_rate: computes
+compute_drift_task --> DRIFT_STORAGE: writes latest_report.json and timestamped report
+
+_psi_from_class_distributions --> _stability_index: uses
+_csi_from_samples --> _compute_bin_edges: uses
+_csi_from_samples --> _distribution_from_edges: uses
+_csi_from_samples --> _stability_index: uses
+
+_compute_rejection_rate --> PREDICTIONS_DATABASE: query review_status counts
+
+branch_on_drift --> PersistenceGate: enforces
+branch_on_drift --> CooldownGate: enforces
+branch_on_drift --> DRIFT_STORAGE: reads timestamped reports
+branch_on_drift --> AIRFLOW_METADATA: queries DagRun history
+
+DAG_drift_detection_pipeline --> bootstrap_baseline_task: orchestrates
+DAG_drift_detection_pipeline --> compute_drift_task: orchestrates
+DAG_drift_detection_pipeline --> branch_on_drift: orchestrates
+DAG_drift_detection_pipeline --> TriggerDagRunOperator: conditional trigger to model_training_pipeline
+
+note right of branch_on_drift
+    Gating Strategy (applied sequentially):
+    1. Drift Detection: only proceed if drift_detected = true
+    2. Persistence: K of M recent reports must show drift
+    3. Cooldown: model_training_pipeline must not have run recently
+
+    All gates must pass to trigger retrain.
+end note
+
+note bottom of DriftReport
+    Key signals:
+    - PSI: monitors predicted-class distribution shift
+    - CSI (brightness): monitors image lighting conditions
+    - CSI (blur_score): monitors image sharpness
+    - rejection_rate: % of reviewed predictions flagged as incorrect
+
+    drift_detected = True if ANY signal > DRIFT_THRESHOLD
+end note
+
+@enduml

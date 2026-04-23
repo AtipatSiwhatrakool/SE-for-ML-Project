@@ -1,0 +1,77 @@
+@startuml C4_Component_ML
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+LAYOUT_TOP_DOWN()
+
+title C4 Component Diagram — ML Subsystem\n(FastAPI Inference Service + Airflow DAGs)
+
+Person(user, "User", "Uploads storefront images")
+Person(reviewer, "Reviewer", "Approves/rejects predictions,\ntriggers model reload")
+
+System_Ext(hf, "Hugging Face Hub", "Punnarunwuwu/seml-industry-ver\n(train_v1, train_v2, test)")
+System_Ext(tv, "torchvision", "EfficientNetV2-S & ResNet34\npretrained weights")
+
+ContainerDb(predictions_db, "predictions-db", "PostgreSQL 13", "prediction_logs (16 cols) + users")
+ContainerDb(mlflow_store, "MLflow tracking + artifacts", "SQLite + filesystem volume", "Experiment runs, params,\nmetrics, pickled models")
+ContainerDb(pointer, "current_model.json", "JSON on shared mlruns volume", "{pca_pkl_path, clf_pkl_path,\nrun_id, test_f1, promoted_at}")
+ContainerDb(baseline, "baseline_reference.json", "JSON on shared data volume", "Reference class distribution,\nbrightness/blur samples")
+
+Container_Boundary(api, "FastAPI Inference Service  (host, Python 3.14+)") {
+    Component(auth, "Auth", "api/auth.py", "bcrypt verify, session cookie,\nrequire_role() dependency")
+    Component(endpoints, "HTTP Endpoints", "api/main.py (FastAPI)", "/predict, /review/*, /admin/reload,\n/auth/*, /health")
+    Component(loader, "Model Pointer Loader", "api/main.py:load_model_pointer", "Reads current_model.json,\nfalls back to legacy UUID paths")
+    Component(backbone, "Backbone", "torchvision EfficientNetV2-S", "Classifier → Identity,\n1280-dim feature extractor")
+    Component(pca, "PCA", "pickled sklearn", "1280 → 256 dims")
+    Component(clf, "Classifier", "pickled sklearn LogReg", "Predicts class + softmax confidence\n(threshold 0.60)")
+    Component(monitor, "Monitoring Module", "api/monitoring.py", "append_prediction_log,\nlist_pending_reviews, submit_review,\ncompute_brightness/blur")
+}
+
+Container_Boundary(airflow, "Airflow Scheduler  (Docker, Python 3.10)") {
+    Component(drift_bootstrap, "bootstrap_baseline", "PythonOperator", "Creates baseline_reference.json\nfrom earliest 500 rows")
+    Component(drift_compute, "compute_drift_report", "PythonOperator", "PSI + CSI(brightness, blur)\n+ rejection_rate over 7-day window")
+    Component(drift_branch, "branch_on_drift", "BranchPythonOperator", "Persistence (3-of-5)\n+ Cooldown (7d) gates")
+    Component(drift_trigger, "trigger_model_retraining", "TriggerDagRunOperator", "Fires model_training_pipeline DAG")
+
+    Component(train_extract, "extract_features_task", "PythonOperator", "HF loader + reviewed rows,\n4-way grid ({ResNet34,EffNetV2-S}\n× {train_v1,train_v2})")
+    Component(train_grid, "train_and_log_task", "PythonOperator + MLflow", "PCA(256) + LogReg per config,\npicks best test-F1,\nwrites current_model.json")
+    Component(train_baseline, "regenerate_baseline_task", "PythonOperator", "Deletes baseline_reference.json\nso next drift run re-bootstraps")
+}
+
+' ── Inference path ─────────────────────────────────────────────────
+Rel(user, endpoints, "Upload image", "HTTPS multipart")
+Rel(reviewer, endpoints, "Approve / reject / reload", "HTTPS")
+Rel(endpoints, auth, "current_user, require_role")
+Rel(auth, predictions_db, "Fetch user, verify bcrypt", "SQL")
+Rel(endpoints, monitor, "Persist / read prediction rows")
+Rel(monitor, predictions_db, "INSERT / SELECT / UPDATE\nprediction_logs", "SQL")
+Rel(endpoints, loader, "startup + /admin/reload")
+Rel(loader, pointer, "Read", "filesystem")
+Rel(endpoints, backbone, "Forward pass")
+Rel(backbone, pca, "1280-dim features")
+Rel(pca, clf, "256-dim features")
+Rel(backbone, tv, "Pretrained weights\n(first run)", "HTTPS")
+
+' ── Drift detection path ───────────────────────────────────────────
+Rel(drift_bootstrap, predictions_db, "SELECT earliest 500", "SQL")
+Rel(drift_bootstrap, baseline, "Write if missing", "filesystem")
+Rel(drift_compute, predictions_db, "SELECT last 7 days\n+ review counts", "SQL")
+Rel(drift_compute, baseline, "Read reference dist", "filesystem")
+Rel(drift_compute, drift_branch, "Drift report", "XCom + JSON")
+Rel(drift_branch, drift_trigger, "If gates pass")
+Rel(drift_trigger, train_extract, "TriggerDagRun:\nmodel_training_pipeline")
+
+' ── Training path ──────────────────────────────────────────────────
+Rel(train_extract, hf, "load_dataset", "HTTPS")
+Rel(train_extract, predictions_db, "Pull approved/rejected\nas labeled data", "SQL")
+Rel(train_extract, tv, "Backbone weights", "cached")
+Rel(train_extract, train_grid, "Extracted features (.npy)")
+Rel(train_grid, mlflow_store, "log_params, log_metrics,\nlog_model", "MLflow API")
+Rel(train_grid, pointer, "Write winning run's\nartifact paths", "filesystem")
+Rel(train_grid, train_baseline, "Chain")
+Rel(train_baseline, baseline, "Delete\n(next drift re-bootstraps)", "filesystem")
+
+' ── Promotion link ─────────────────────────────────────────────────
+Rel_Back(loader, pointer, "Re-read on reload", "filesystem")
+
+@enduml

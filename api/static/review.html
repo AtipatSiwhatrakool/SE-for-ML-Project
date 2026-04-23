@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Review Queue · Industry Classifier</title>
+  <style>
+    :root {
+      --bg: #0f1216;
+      --panel: #171b22;
+      --panel-2: #1f252e;
+      --border: #2a313c;
+      --text: #e6e9ef;
+      --muted: #8b94a3;
+      --accent: #5b8def;
+      --accent-2: #7cd992;
+      --warn: #f5a524;
+      --err: #ef4444;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { min-height: 100vh; display: flex; flex-direction: column; }
+
+    header { padding: 24px 32px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+    header h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.2px; }
+    header .right { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--muted); }
+    header .who { color: var(--text); }
+    header .sep { width: 1px; height: 14px; background: var(--border); }
+    header .logout { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0; }
+    header .logout:hover { color: var(--text); }
+    header .model-info { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    main { flex: 1; max-width: 960px; width: 100%; margin: 0 auto; padding: 32px; display: flex; flex-direction: column; gap: 16px; }
+    @media (max-width: 760px) { main { padding: 20px; } }
+
+    .summary { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+    .summary .count { color: var(--text); font-weight: 500; }
+    .refresh {
+      background: var(--panel-2); border: 1px solid var(--border);
+      color: var(--muted); padding: 6px 10px; border-radius: 8px;
+      font-size: 12px; cursor: pointer;
+    }
+    .refresh:hover { color: var(--text); }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+    .drift-card { display: none; padding: 16px 18px; }
+    .drift-card.show { display: block; }
+    .drift-card.ok { border-color: rgba(124, 217, 146, 0.32); background: rgba(124, 217, 146, 0.07); }
+    .drift-card.warn { border-color: rgba(245, 165, 36, 0.32); background: rgba(245, 165, 36, 0.07); }
+    .drift-card.err { display: none; border-color: rgba(239, 68, 68, 0.36); background: rgba(239, 68, 68, 0.08); color: var(--text); }
+    .drift-card.err.show { display: block; }
+    .drift-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .drift-title { font-size: 14px; font-weight: 600; }
+    .drift-status {
+      padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.6px; border: 1px solid currentColor;
+    }
+    .drift-copy { margin-top: 10px; font-size: 13px; color: var(--text); line-height: 1.5; }
+    .drift-meta {
+      margin-top: 12px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 24px;
+      font-size: 12px;
+    }
+    .drift-meta .k { color: var(--muted); }
+    .drift-meta .v { color: var(--text); font-variant-numeric: tabular-nums; }
+    .drift-reasons { margin-top: 10px; font-size: 12px; color: var(--muted); }
+    @media (max-width: 760px) { .drift-meta { grid-template-columns: 1fr; } }
+
+    .item {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 760px) { .item { grid-template-columns: 1fr; } }
+
+    .item img {
+      width: 100%; max-height: 220px; object-fit: contain;
+      border-radius: 8px; background: #000; display: block;
+    }
+    .item .body { display: flex; flex-direction: column; gap: 14px; }
+
+    .pred-label {
+      font-size: 20px; font-weight: 600; margin: 0;
+      text-transform: capitalize; letter-spacing: -0.2px;
+    }
+    .pred-sub { font-size: 12px; color: var(--muted); margin: 2px 0 0; font-variant-numeric: tabular-nums; }
+
+    .meta-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 24px;
+      font-size: 12px;
+    }
+    .meta-grid .k { color: var(--muted); }
+    .meta-grid .v { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      padding: 10px 14px; font-size: 13px; font-weight: 500;
+      border: none; border-radius: 8px; cursor: pointer;
+      transition: background 120ms, opacity 120ms;
+    }
+    .btn-approve { background: var(--accent-2); color: #0b3a1a; }
+    .btn-approve:hover:not(:disabled) { background: #6ac683; }
+    .btn-reject { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+    .btn-reject:hover:not(:disabled) { background: #2a313c; }
+    .btn-confirm { background: var(--warn); color: #3a2a05; }
+    .btn-confirm:hover:not(:disabled) { background: #d98f1a; }
+    .btn-cancel { background: none; color: var(--muted); border: 1px solid var(--border); }
+    .btn-cancel:hover:not(:disabled) { color: var(--text); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .reject-form { display: none; flex-direction: column; gap: 10px; padding: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; }
+    .reject-form.show { display: flex; }
+    .reject-form label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+    .reject-form select {
+      padding: 8px 10px; font-size: 14px;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); outline: none;
+    }
+    .reject-form .buttons { display: flex; gap: 8px; }
+
+    .empty, .loading { color: var(--muted); font-size: 13px; text-align: center; padding: 48px 0; }
+
+    .err {
+      display: none; padding: 12px;
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      border-radius: 8px; color: var(--err); font-size: 13px;
+    }
+    .err.show { display: block; }
+
+    .toast {
+      position: fixed; bottom: 20px; right: 20px;
+      padding: 10px 14px; border-radius: 8px;
+      background: var(--panel); border: 1px solid var(--border);
+      color: var(--text); font-size: 13px; opacity: 0;
+      transform: translateY(8px); transition: opacity 180ms, transform 180ms;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.ok { border-color: rgba(124, 217, 146, 0.4); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Review Queue</h1>
+    <div class="right">
+      <span id="modelInfo" class="model-info" title="Currently loaded model">model: —</span>
+      <button class="refresh" id="reloadBtn" title="Re-read current_model.json and swap models in memory">Reload model</button>
+      <span class="sep"></span>
+      <span id="who" class="who">—</span>
+      <span class="sep"></span>
+      <button class="logout" id="logoutBtn">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="card drift-card" id="driftCard">
+      <div class="drift-head">
+        <div>
+          <div class="drift-title">Production Data Drift</div>
+          <div class="drift-copy" id="driftMessage">Loading latest drift report…</div>
+        </div>
+        <span class="drift-status" id="driftStatus">Checking</span>
+      </div>
+      <div class="drift-reasons" id="driftReasons"></div>
+      <div class="drift-meta" id="driftMeta"></div>
+    </section>
+
+    <div class="summary">
+      <span><span class="count" id="countEl">0</span> pending</span>
+      <button class="refresh" id="refreshBtn">Refresh</button>
+    </div>
+    <div class="err" id="err"></div>
+    <div id="queue"><div class="loading">Loading…</div></div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const CLASS_NAMES = [
+      "beauty_salon",
+      "drugstore",
+      "restaurant",
+      "movie_theater",
+      "apartment_building",
+      "supermarket",
+    ];
+
+    const queue = document.getElementById('queue');
+    const countEl = document.getElementById('countEl');
+    const whoEl = document.getElementById('who');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const reloadBtn = document.getElementById('reloadBtn');
+    const modelInfoEl = document.getElementById('modelInfo');
+    const errEl = document.getElementById('err');
+    const toastEl = document.getElementById('toast');
+    const driftCardEl = document.getElementById('driftCard');
+    const driftStatusEl = document.getElementById('driftStatus');
+    const driftMessageEl = document.getElementById('driftMessage');
+    const driftReasonsEl = document.getElementById('driftReasons');
+    const driftMetaEl = document.getElementById('driftMeta');
+
+    let toastTimer = null;
+    function toast(msg, ok = true) {
+      toastEl.textContent = msg;
+      toastEl.classList.toggle('ok', ok);
+      toastEl.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+    }
+
+    function showErr(msg) { errEl.textContent = msg; errEl.classList.add('show'); }
+    function hideErr() { errEl.classList.remove('show'); }
+
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    function renderItem(item) {
+      const id = item.request_id;
+      const options = CLASS_NAMES
+        .filter(c => c !== item.predicted_class)
+        .map(c => `<option value="${c}">${c.replace(/_/g, ' ')}</option>`)
+        .join('');
+
+      return `
+        <article class="card item" data-id="${id}">
+          <img src="/api/v1/review/${id}/image" alt="uploaded image" />
+          <div class="body">
+            <div>
+              <div class="pred-label">${escapeHtml(item.predicted_class.replace(/_/g, ' '))}</div>
+              <div class="pred-sub">confidence ${(item.confidence_score * 100).toFixed(1)}% · ${escapeHtml(item.filename || '—')}</div>
+            </div>
+
+            <div class="meta-grid">
+              <span class="k">Submitted</span><span class="v">${escapeHtml(item.timestamp)}</span>
+              <span class="k">Size</span><span class="v">${item.width}×${item.height}</span>
+              <span class="k">Brightness</span><span class="v">${item.brightness.toFixed(2)}</span>
+              <span class="k">Blur score</span><span class="v">${item.blur_score.toFixed(2)}</span>
+              <span class="k">Inference</span><span class="v">${item.inference_time_ms.toFixed(0)} ms</span>
+              <span class="k">Raw label</span><span class="v">${escapeHtml(item.predicted_class)}</span>
+            </div>
+
+            <div class="actions">
+              <button class="btn btn-approve" data-action="approve">Approve</button>
+              <button class="btn btn-reject" data-action="reject-open">Reject</button>
+            </div>
+
+            <div class="reject-form" data-role="reject-form">
+              <label for="class-${id}">Correct class</label>
+              <select id="class-${id}" data-role="class-select">${options}</select>
+              <div class="buttons">
+                <button class="btn btn-confirm" data-action="reject-confirm">Confirm rejection</button>
+                <button class="btn btn-cancel" data-action="reject-cancel">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </article>
+      `;
+    }
+
+    function formatPct(value) {
+      if (value == null || Number.isNaN(Number(value))) return '—';
+      return `${(Number(value) * 100).toFixed(1)}%`;
+    }
+
+    function formatScore(value) {
+      if (value == null || Number.isNaN(Number(value))) return '—';
+      return Number(value).toFixed(3);
+    }
+
+    function reasonLabel(reason) {
+      return ({
+        psi: 'class mix shifted',
+        csi_brightness: 'brightness distribution shifted',
+        csi_blur_score: 'blur distribution shifted',
+        rejection_rate: 'review rejection rate increased',
+      })[reason] || reason;
+    }
+
+    function renderDriftMeta(report) {
+      const rows = [
+        ['Report time', report.generated_at || '—'],
+        ['Window', report.window_start && report.window_end ? `${report.window_start} to ${report.window_end}` : '—'],
+        ['Recent rows', report.recent_rows ?? '—'],
+        ['Threshold', formatScore(report.threshold)],
+        ['PSI', formatScore(report.psi)],
+        ['CSI brightness', formatScore(report.csi_brightness)],
+        ['CSI blur', formatScore(report.csi_blur_score)],
+        ['Rejection rate', formatPct(report.rejection_rate)],
+      ];
+      driftMetaEl.innerHTML = rows.map(([k, v]) => (
+        `<span class="k">${escapeHtml(k)}</span><span class="v">${escapeHtml(String(v))}</span>`
+      )).join('');
+    }
+
+    function renderDrift(report) {
+      const status = String(report.status || 'unknown');
+      const hasDrift = Boolean(report.drift_detected);
+      if (!hasDrift) {
+        driftCardEl.className = 'card drift-card';
+        driftStatusEl.textContent = '';
+        driftMessageEl.textContent = '';
+        driftReasonsEl.textContent = '';
+        driftMetaEl.innerHTML = '';
+        return;
+      }
+
+      const tone = hasDrift ? 'err' : (status === 'ok' ? 'ok' : 'warn');
+      driftCardEl.className = `card drift-card show ${tone}`;
+      driftStatusEl.textContent = hasDrift ? 'Alert' : (status === 'ok' ? 'Stable' : 'Waiting');
+      driftMessageEl.textContent = report.message || 'No drift summary available.';
+
+      const reasons = Array.isArray(report.reasons) ? report.reasons : [];
+      driftReasonsEl.textContent = reasons.length
+        ? `Triggered by: ${reasons.map(reasonLabel).join(', ')}`
+        : (status === 'ok' ? 'No drift signal crossed the configured threshold.' : 'The system is waiting for enough recent production data before scoring drift.');
+
+      renderDriftMeta(report);
+    }
+
+    async function loadDrift() {
+      try {
+        const r = await fetch('/api/v1/monitoring/drift/latest');
+        if (r.status === 401) { window.location.href = '/login.html'; return; }
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const report = await r.json();
+        renderDrift(report);
+      } catch (ex) {
+        driftCardEl.className = 'card drift-card';
+        driftStatusEl.textContent = '';
+        driftMessageEl.textContent = '';
+        driftReasonsEl.textContent = '';
+        driftMetaEl.innerHTML = '';
+      }
+    }
+
+    async function loadQueue() {
+      hideErr();
+      queue.innerHTML = '<div class="loading">Loading…</div>';
+      try {
+        const r = await fetch('/api/v1/review/pending');
+        if (r.status === 401) { window.location.href = '/login.html'; return; }
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        const items = data.items || [];
+        countEl.textContent = String(items.length);
+        if (items.length === 0) {
+          queue.innerHTML = '<div class="empty">No items pending review.</div>';
+          return;
+        }
+        queue.innerHTML = items.map(renderItem).join('');
+      } catch (ex) {
+        showErr(`Failed to load queue: ${ex.message || ex}`);
+        queue.innerHTML = '';
+      }
+    }
+
+    async function submitDecision(id, decision, finalClass, cardEl) {
+      const buttons = cardEl.querySelectorAll('button');
+      buttons.forEach(b => b.disabled = true);
+      try {
+        const body = new FormData();
+        body.append('decision', decision);
+        body.append('final_class', finalClass);
+        const r = await fetch(`/api/v1/review/${id}`, { method: 'POST', body });
+        if (r.status === 401) { window.location.href = '/login.html'; return; }
+        if (!r.ok) {
+          const detail = await r.json().catch(() => ({}));
+          throw new Error(detail.detail || `HTTP ${r.status}`);
+        }
+        cardEl.style.transition = 'opacity 180ms';
+        cardEl.style.opacity = '0';
+        setTimeout(() => {
+          cardEl.remove();
+          countEl.textContent = String(Math.max(0, parseInt(countEl.textContent) - 1));
+          if (!queue.querySelector('.item')) {
+            queue.innerHTML = '<div class="empty">No items pending review.</div>';
+          }
+        }, 180);
+        toast(decision === 'approved' ? 'Approved' : 'Rejected', true);
+      } catch (ex) {
+        buttons.forEach(b => b.disabled = false);
+        showErr(`Submission failed: ${ex.message || ex}`);
+      }
+    }
+
+    queue.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      const cardEl = btn.closest('.item');
+      const id = cardEl.dataset.id;
+      const action = btn.dataset.action;
+      const rejectForm = cardEl.querySelector('[data-role="reject-form"]');
+
+      if (action === 'approve') {
+        const predicted = cardEl.querySelector('.pred-label').textContent.trim().replace(/ /g, '_');
+        submitDecision(id, 'approved', predicted, cardEl);
+      } else if (action === 'reject-open') {
+        rejectForm.classList.add('show');
+      } else if (action === 'reject-cancel') {
+        rejectForm.classList.remove('show');
+      } else if (action === 'reject-confirm') {
+        const select = cardEl.querySelector('[data-role="class-select"]');
+        submitDecision(id, 'rejected', select.value, cardEl);
+      }
+    });
+
+    refreshBtn.addEventListener('click', () => {
+      loadDrift();
+      loadQueue();
+    });
+
+    logoutBtn.addEventListener('click', async () => {
+      await fetch('/api/v1/auth/logout', { method: 'POST' });
+      window.location.href = '/login.html';
+    });
+
+    function formatModelInfo(info) {
+      if (!info) return 'model: —';
+      if (info.source === 'fallback') return 'model: fallback';
+      const runId = info.run_id ? String(info.run_id).slice(0, 8) : '—';
+      const f1 = info.test_f1 != null ? ` · F1 ${Number(info.test_f1).toFixed(3)}` : '';
+      return `model: ${runId}${f1}`;
+    }
+
+    async function loadModelInfo() {
+      try {
+        const r = await fetch('/health');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        modelInfoEl.textContent = formatModelInfo(d.model);
+        modelInfoEl.title = JSON.stringify(d.model, null, 2);
+      } catch (ex) {
+        modelInfoEl.textContent = 'model: error';
+      }
+    }
+
+    reloadBtn.addEventListener('click', async () => {
+      reloadBtn.disabled = true;
+      const prev = reloadBtn.textContent;
+      reloadBtn.textContent = 'Reloading…';
+      try {
+        const r = await fetch('/api/v1/admin/reload', { method: 'POST' });
+        if (r.status === 401) { window.location.href = '/login.html'; return; }
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(body.detail || `HTTP ${r.status}`);
+        modelInfoEl.textContent = formatModelInfo(body.model);
+        modelInfoEl.title = JSON.stringify(body.model, null, 2);
+        toast('Model reloaded', true);
+      } catch (ex) {
+        toast(`Reload failed: ${ex.message || ex}`, false);
+        showErr(`Reload failed: ${ex.message || ex}`);
+      } finally {
+        reloadBtn.disabled = false;
+        reloadBtn.textContent = prev;
+      }
+    });
+
+    async function loadMe() {
+      try {
+        const r = await fetch('/api/v1/auth/me');
+        if (r.status === 401) { window.location.href = '/login.html'; return; }
+        const d = await r.json();
+        whoEl.textContent = `${d.username} · ${d.role}`;
+      } catch {}
+    }
+
+    loadMe();
+    loadModelInfo();
+    loadDrift();
+    loadQueue();
+  </script>
+</body>
+</html>
