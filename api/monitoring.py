@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import numpy as np
 import psycopg2
@@ -65,8 +65,9 @@ def append_prediction_log(row: Dict[str, Any]) -> None:
             INSERT INTO prediction_logs (
                 request_id, timestamp, filename, predicted_class,
                 confidence_score, requires_manual_review, inference_time_ms,
-                brightness, blur_score, width, height
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                brightness, blur_score, width, height,
+                image_bytes, image_mime
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 row["request_id"],
@@ -80,8 +81,71 @@ def append_prediction_log(row: Dict[str, Any]) -> None:
                 row["blur_score"],
                 row["width"],
                 row["height"],
+                psycopg2.Binary(row["image_bytes"]),
+                row["image_mime"],
             ),
         )
+
+
+def list_pending_reviews() -> list[Dict[str, Any]]:
+    with psycopg2.connect(PREDICTIONS_DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT request_id, timestamp, filename, predicted_class,
+                   confidence_score, inference_time_ms,
+                   brightness, blur_score, width, height, image_mime
+            FROM prediction_logs
+            WHERE review_status = 'pending'
+            ORDER BY timestamp ASC
+            """
+        )
+        rows = cur.fetchall()
+    return [
+        {
+            "request_id": str(r[0]),
+            "timestamp": r[1].isoformat() if r[1] else None,
+            "filename": r[2],
+            "predicted_class": r[3],
+            "confidence_score": float(r[4]),
+            "inference_time_ms": float(r[5]),
+            "brightness": float(r[6]),
+            "blur_score": float(r[7]),
+            "width": int(r[8]),
+            "height": int(r[9]),
+            "image_mime": r[10],
+        }
+        for r in rows
+    ]
+
+
+def get_review_image(request_id: str) -> Optional[tuple[bytes, str]]:
+    with psycopg2.connect(PREDICTIONS_DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT image_bytes, image_mime FROM prediction_logs WHERE request_id = %s",
+            (request_id,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    return bytes(row[0]), row[1]
+
+
+def submit_review(request_id: str, decision: str, final_class: Optional[str]) -> bool:
+    if decision not in ("approved", "rejected"):
+        raise ValueError(f"Invalid decision: {decision}")
+    with psycopg2.connect(PREDICTIONS_DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE prediction_logs
+               SET review_status = %s,
+                   final_class = %s,
+                   reviewed_at = NOW()
+             WHERE request_id = %s AND review_status = 'pending'
+            """,
+            (decision, final_class, request_id),
+        )
+        updated = cur.rowcount
+    return updated > 0
 
 
 def write_json(path: Path, payload: Dict[str, Any]) -> None:

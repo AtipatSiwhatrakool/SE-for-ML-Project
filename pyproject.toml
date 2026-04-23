@@ -15,4 +15,6 @@ dependencies = [
     "pillow>=11.0.0",
     "python-multipart>=0.0.17",
     "psycopg2-binary>=2.9.0",
+    "bcrypt>=4.0",
+    "itsdangerous>=2.0",
 ]
